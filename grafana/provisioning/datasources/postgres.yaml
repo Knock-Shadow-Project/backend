@@ -1,0 +1,19 @@
+apiVersion: 1
+
+datasources:
+  - name: KnockShadow Postgres
+    uid: knockshadow-postgres
+    type: postgres
+    access: proxy
+    url: db:5432
+    user: knockshadow
+    database: knockshadow
+    secureJsonData:
+      password: knockshadow
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1800
+      timescaledb: true
+      minTimeInterval: 16ms
+    isDefault: true
+    editable: true
