@@ -10,9 +10,12 @@ mod storage;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Configura el subscriber global de tracing para ver logs en consola.
-    #[cfg(debug_assertions)]
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
+        .with_max_level(if cfg!(debug_assertions) {
+            tracing::Level::DEBUG
+        } else {
+            tracing::Level::INFO
+        })
         .init();
 
     // MAC del dispositivo objetivo.

@@ -15,14 +15,14 @@ use std::error::Error;
 use tracing::{debug, info, warn};
 
 /// Busca un dispositivo BLE por MAC y devuelve su nombre y handle `Peripheral`.
-/// 
+///
 /// Flujo:
 /// 1. Obtiene el adaptador Bluetooth local.
 /// 2. Inicia un escaneo de dispositivos.
 /// 3. Recorre perifericos descubiertos y compara direccion MAC.
 /// 4. Si coincide, conecta (si hace falta) y devuelve el dispositivo.
 pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), Box<dyn Error>> {
-    info!("Attempting to connect to device: {}", mac);
+    debug!("Attempting to connect to device: {}", mac);
 
     // Crea el manager BLE y toma el primer adaptador disponible.
     let manager = Manager::new().await?;
@@ -33,7 +33,7 @@ pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), 
         .next()
         .ok_or("No Bluetooth adapter found")?;
 
-    info!("Discovering devices...");
+    debug!("Discovering devices...");
     // Inicia escaneo con filtro por defecto (sin restricciones).
     central.start_scan(ScanFilter::default()).await?;
 
@@ -65,18 +65,18 @@ pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), 
 }
 
 /// Descubre servicios, se suscribe a notificaciones y retorna un stream de bytes.
-/// 
+///
 /// Solo se suscribe a caracteristicas que:
 /// - Tienen UUID terminado en `-0001-11e1-ac36-0002a5d5c51b`.
 /// - Exponen la propiedad `NOTIFY`.
 pub(crate) async fn stream_data(
     device: Peripheral,
 ) -> Result<impl futures::Stream<Item = Vec<u8>>, Box<dyn Error>> {
-    info!("Discovering services");
+    debug!("Discovering services");
     device.discover_services().await?;
 
     let characteristics = device.characteristics();
-    info!("Found {} characteristics", characteristics.len());
+    debug!("Found {} characteristics", characteristics.len());
     // Filtra por el patron de UUID esperado y activa notificaciones.
     for characteristic in characteristics {
         debug!("Testing characteristic: {:?}", characteristic.uuid);
@@ -86,7 +86,7 @@ pub(crate) async fn stream_data(
                 .properties
                 .contains(btleplug::api::CharPropFlags::NOTIFY)
         {
-            info!("Subscribing to characteristic: {:?}", characteristic.uuid);
+            debug!("Subscribing to characteristic: {:?}", characteristic.uuid);
             device.subscribe(&characteristic).await?;
         }
     }
@@ -98,7 +98,7 @@ pub(crate) async fn stream_data(
 }
 
 /// Intenta extraer un timestamp de 16 bits (little-endian) del inicio del buffer.
-/// 
+///
 /// Devuelve una tupla con:
 /// - `u16`: timestamp parseado.
 /// - `&[u8]`: resto del payload sin el timestamp.
@@ -111,11 +111,11 @@ fn extract_timestamp(data: &[u8]) -> Option<(u16, &[u8])> {
 }
 
 /// Decodifica un frame binario en aceleracion `x`, `y`, `z` (i16 -> f32).
-/// 
+///
 /// Formatos soportados:
 /// - Con timestamp: `[ts_lo, ts_hi, x_lo, x_hi, y_lo, y_hi, z_lo, z_hi, ...]`
 /// - Sin timestamp: `[x_lo, x_hi, y_lo, y_hi, z_lo, z_hi, ...]`
-/// 
+///
 /// Retorna:
 /// - `Some((Some(ts), x, y, z))` si habia timestamp y datos validos.
 /// - `Some((None, x, y, z))` si no habia timestamp y datos validos.

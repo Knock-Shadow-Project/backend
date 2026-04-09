@@ -33,17 +33,26 @@ pub struct SampleWriter {
 impl SampleWriter {
     /// Crea la conexion a PostgreSQL, inicializa schema y arranca el loop de escritura.
     pub async fn connect(database_url: &str) -> Result<Self, Box<dyn Error>> {
-        let (client, connection) = tokio_postgres::connect(database_url, NoTls).await?;
+        let (client, connection) = match tokio_postgres::connect(database_url, NoTls).await {
+            Ok((client, connection)) => (client, connection),
+            Err(err) => {
+                error!("PostgreSQL connection error: {}", err);
+                return Err(Box::new(err));
+            }
+        };
 
         // Task de mantenimiento para reportar errores de la conexion subyacente.
         tokio::spawn(async move {
             if let Err(err) = connection.await {
-                error!("postgres connection error: {}", err);
+                error!("PostgreSQL connection error: {}", err);
             }
         });
 
         // Crea tabla e indice si aun no existen.
-        init_schema(&client).await?;
+        if let Err(err) = init_schema(&client).await {
+            error!("PostgreSQL schema initialization error: {}", err);
+            return Err(Box::new(err));
+        }
 
         // Canal bufferizado para desacoplar productor (BLE) de consumidor (BD).
         let (tx, rx) = mpsc::channel(4096);
@@ -116,6 +125,7 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
     // Buffer reusable para minimizar realocaciones.
     let mut buffer: Vec<BleSample> = Vec::with_capacity(256);
 
+    // Loop principal: espera 128 muestras o 50 ms para enviar un lote.
     loop {
         tokio::select! {
             maybe_sample = rx.recv() => {
@@ -187,4 +197,5 @@ async fn flush_batch(client: &mut Client, stmt: &Statement, buffer: &mut Vec<Ble
     }
 
     debug!("flushed {} samples", pending.len());
+    info!("Data rate: {:.2} samples/sec", pending.len() as f64 / 0.05);
 }
