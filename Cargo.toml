@@ -1,0 +1,21 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "ble_stream"
+path = "src/main.rs"
+
+[[bin]]
+name = "serial"
+path = "src/serial.rs"
+
+[dependencies]
+btleplug = "0.12.0"
+clap = { version = "4.6.0", features = ["derive"] }
+futures = "0.3.32"
+serialport = "4"
+tokio = { version = "1.51.1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = "0.3.23"
