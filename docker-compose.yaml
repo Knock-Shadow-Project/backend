@@ -10,10 +10,17 @@ services:
     volumes:
       - db_data_pg18:/var/lib/postgresql
       - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h localhost -p 5432"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
   grafana:
     image: grafana/grafana:latest
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
@@ -26,7 +33,8 @@ services:
   device_1:
     build: .
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     network_mode: host
     privileged: true
     volumes:
