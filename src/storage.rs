@@ -5,8 +5,8 @@
 //! - `SampleWriter`, que desacopla recepcion de datos y escritura a BD.
 //! - Un loop de escritura por lotes con transacciones.
 
+use std::env;
 use std::error::Error;
-
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 use tokio_postgres::{Client, NoTls, Statement};
@@ -23,6 +23,24 @@ pub struct BleSample {
     pub z: f32,
 }
 
+/// Estadisticas para monitorear rendimiento del escritor.
+#[derive(Clone, Copy, Debug)]
+struct WriterStats {
+    total_samples: usize,
+    last_report: std::time::Instant,
+    per_commit_samples: usize,
+    samples_per_second: f64,
+}
+impl WriterStats {
+    fn new() -> Self {
+        Self {
+            total_samples: 0,
+            last_report: std::time::Instant::now(),
+            per_commit_samples: 0,
+            samples_per_second: 0.0,
+        }
+    }
+}
 /// Escritor asincrono basado en canal para enviar muestras a PostgreSQL.
 ///
 /// La idea es evitar que el loop de lectura BLE quede bloqueado por I/O de base de datos.
@@ -104,6 +122,8 @@ async fn init_schema(client: &Client) -> Result<(), tokio_postgres::Error> {
 /// - Periodico cada 50 ms si hay datos pendientes.
 /// - Final al cerrar el canal.
 async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
+    let mut stats = WriterStats::new();
+
     let insert_stmt = match client
         .prepare(
             "
@@ -121,7 +141,15 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
     };
 
     // Tick periodico para limitar latencia en lotes pequenos.
-    let mut tick = interval(Duration::from_millis(50));
+    let mut tick = interval(Duration::from_millis(
+        env::var("FLUSH_INTERVAL_MS")
+            .unwrap_or("50".to_string())
+            .parse()
+            .unwrap_or(50),
+    ));
+
+    // Tick para reportar tasa de datos cada 5 segundos.
+    let mut info_tick = interval(Duration::from_secs(5));
     // Buffer reusable para minimizar realocaciones.
     let mut buffer: Vec<BleSample> = Vec::with_capacity(256);
 
@@ -134,12 +162,12 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
                         buffer.push(sample);
                         // Umbral de lote: reduce costo por transaccion.
                         if buffer.len() >= 128 {
-                            flush_batch(&mut client, &insert_stmt, &mut buffer).await;
+                            flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
                         }
                     }
                     None => {
                         if !buffer.is_empty() {
-                            flush_batch(&mut client, &insert_stmt, &mut buffer).await;
+                            flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
                         }
                         info!("sample channel closed, writer loop stopping");
                         break;
@@ -148,7 +176,14 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
             }
             _ = tick.tick() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &insert_stmt, &mut buffer).await;
+                    flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
+                }
+            }
+            _ = info_tick.tick() => {
+                let elapsed = stats.last_report.elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    info!("total samples: {}, last batch: {}, rate: {:.2} samples/s",
+                        stats.total_samples, stats.per_commit_samples, stats.samples_per_second);
                 }
             }
         }
@@ -158,7 +193,12 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
 /// Persiste un lote dentro de una transaccion unica.
 ///
 /// Si ocurre un error durante insercion o commit, se reporta y el lote no se confirma.
-async fn flush_batch(client: &mut Client, stmt: &Statement, buffer: &mut Vec<BleSample>) {
+async fn flush_batch(
+    client: &mut Client,
+    stmt: &Statement,
+    buffer: &mut Vec<BleSample>,
+    stats: &mut WriterStats,
+) {
     // Mueve el contenido del buffer para liberar al productor cuanto antes.
     let mut pending = Vec::with_capacity(buffer.len());
     pending.append(buffer);
@@ -195,7 +235,14 @@ async fn flush_batch(client: &mut Client, stmt: &Statement, buffer: &mut Vec<Ble
         error!("failed to commit sample batch: {}", err);
         return;
     }
+    stats.total_samples += pending.len();
+    stats.per_commit_samples = pending.len();
+    let elapsed = stats.last_report.elapsed().as_secs_f64();
+    if elapsed > 0.0 {
+        let current_rate = pending.len() as f64 / elapsed;
+        stats.samples_per_second = stats.samples_per_second * 0.8 + current_rate * 0.2;
+    }
+    stats.last_report = std::time::Instant::now();
 
     debug!("flushed {} samples", pending.len());
-    info!("Data rate: {:.2} samples/sec", pending.len() as f64 / 0.05);
 }

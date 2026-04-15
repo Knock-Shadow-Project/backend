@@ -49,6 +49,7 @@ services:
             DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
             DEVICE_MAC: "DF:65:81:D0:D7:E5"
             DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+            FLUSH_INTERVAL_MS: "50"
     device_2:
         profiles:
             - hector
@@ -64,6 +65,7 @@ services:
             DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
             DEVICE_MAC: "CB:01:10:3E:0D:61"
             DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+            FLUSH_INTERVAL_MS: "50"
 
     device_3:
         profiles:
@@ -80,5 +82,6 @@ services:
             DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
             DEVICE_MAC: "D3:CF:D9:A0:CD:58"
             DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+            FLUSH_INTERVAL_MS: "50"
 volumes:
     db_data_pg18:
