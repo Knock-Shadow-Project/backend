@@ -1,47 +1,84 @@
 services:
-  db:
-    image: timescale/timescaledb:latest-pg17
-    environment:
-      POSTGRES_USER: knockshadow
-      POSTGRES_PASSWORD: knockshadow
-      POSTGRES_DB: knockshadow
-    ports:
-      - "5432:5432"
-    volumes:
-      - db_data_pg18:/var/lib/postgresql
-      - ./db/init:/docker-entrypoint-initdb.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h localhost -p 5432"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-  grafana:
-    image: grafana/grafana:latest
-    depends_on:
-      db:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
-    volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
-  
-  device_1:
-    build: .
-    depends_on:
-      db:
-        condition: service_healthy
-    network_mode: host
-    privileged: true
-    volumes:
-      - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
-    environment:
-      DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
-      DEVICE_MAC: "DF:65:81:D0:D7:E5"
-      DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+    db:
+        image: timescale/timescaledb:latest-pg17
+        environment:
+            POSTGRES_USER: knockshadow
+            POSTGRES_PASSWORD: knockshadow
+            POSTGRES_DB: knockshadow
+        ports:
+            - "5432:5432"
+        volumes:
+            - db_data_pg18:/var/lib/postgresql
+            - ./db/init:/docker-entrypoint-initdb.d:ro
+        healthcheck:
+            test:
+                [
+                    "CMD-SHELL",
+                    "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h localhost -p 5432",
+                ]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+            start_period: 30s
+    grafana:
+        image: grafana/grafana:latest
+        depends_on:
+            db:
+                condition: service_healthy
+        ports:
+            - "3000:3000"
+        environment:
+            GF_SECURITY_ADMIN_USER: admin
+            GF_SECURITY_ADMIN_PASSWORD: admin
+            GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
+        volumes:
+            - ./grafana/provisioning:/etc/grafana/provisioning:ro
+
+    device_1:
+        profiles:
+            - victor
+        image: knockshadow-backend:latest
+        depends_on:
+            db:
+                condition: service_healthy
+        network_mode: host
+        privileged: true
+        volumes:
+            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+        environment:
+            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
+            DEVICE_MAC: "DF:65:81:D0:D7:E5"
+            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+    device_2:
+        profiles:
+            - hector
+        image: knockshadow-backend:latest
+        depends_on:
+            db:
+                condition: service_healthy
+        network_mode: host
+        privileged: true
+        volumes:
+            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+        environment:
+            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
+            DEVICE_MAC: "CB:01:10:3E:0D:61"
+            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+
+    device_3:
+        profiles:
+            - cristian
+        image: knockshadow-backend:latest
+        depends_on:
+            db:
+                condition: service_healthy
+        network_mode: host
+        privileged: true
+        volumes:
+            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
+        environment:
+            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
+            DEVICE_MAC: "D3:CF:D9:A0:CD:58"
+            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
 volumes:
-  db_data_pg18:
+    db_data_pg18:

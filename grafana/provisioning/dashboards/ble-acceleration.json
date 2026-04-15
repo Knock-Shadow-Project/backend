@@ -84,18 +84,22 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 17,
-        "w": 24,
+        "h": 12,
+        "w": 12,
         "x": 0,
         "y": 0
       },
       "id": 1,
       "options": {
         "legend": {
-          "calcs": ["lastNotNull", "min", "max"],
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
         "tooltip": {
           "hideZeros": false,
@@ -103,7 +107,7 @@
           "sort": "none"
         }
       },
-      "pluginVersion": "12.4.2",
+      "pluginVersion": "12.4.0",
       "targets": [
         {
           "editorMode": "code",
@@ -158,6 +162,149 @@
         }
       ],
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "knockshadow-postgres"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "m/s^2",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 3,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "accMS2"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "min",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  received_at AS \"time\",\n  x AS \"X\",\n  y AS \"Y\",\n  z AS \"Z\"\nFROM ble_samples\nWHERE $__timeFilter(received_at)\n  AND ('$device_mac2' = 'All' OR device_mac = '$device_mac2')\nORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [
+                  {
+                    "name": "x",
+                    "type": "functionParameter"
+                  }
+                ],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Acceleration (X, Y, Z) 2",
+      "transformations": [
+        {
+          "id": "filterByValue",
+          "options": {
+            "filters": [
+              {
+                "config": {
+                  "id": "between",
+                  "options": {
+                    "from": "-20000",
+                    "to": "20000"
+                  }
+                },
+                "fieldName": "Z"
+              }
+            ],
+            "match": "any",
+            "type": "include"
+          }
+        }
+      ],
+      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -169,8 +316,8 @@
       {
         "allValue": "All",
         "current": {
-          "text": "All",
-          "value": "$__all"
+          "text": "Victor (DF:65:81:D0:D7:E5)",
+          "value": "DF:65:81:D0:D7:E5"
         },
         "datasource": {
           "type": "postgres",
@@ -188,6 +335,53 @@
         "regexApplyTo": "value",
         "sort": 1,
         "type": "query"
+      },
+      {
+        "allValue": "All",
+        "current": {
+          "text": "All",
+          "value": "$__all"
+        },
+        "datasource": {
+          "type": "postgres",
+          "uid": "knockshadow-postgres"
+        },
+        "definition": "SELECT DISTINCT device_mac AS __value, COALESCE(NULLIF(device_name, ''), device_mac) || ' (' || device_mac || ')' AS __text FROM ble_samples ORDER BY 2",
+        "description": "Filter by BLE device",
+        "includeAll": true,
+        "label": "Device 2",
+        "name": "device_mac2",
+        "options": [],
+        "query": {
+          "editorMode": "code",
+          "format": "table",
+          "query": "SELECT DISTINCT device_mac AS __value, COALESCE(NULLIF(device_name, ''), device_mac) || ' (' || device_mac || ')' AS __text FROM ble_samples ORDER BY 2",
+          "rawQuery": true,
+          "rawSql": "SELECT DISTINCT device_mac AS __value, COALESCE(NULLIF(device_name, ''), device_mac) || ' (' || device_mac || ')' AS __text FROM ble_samples ORDER BY 2",
+          "refId": "SQLVariableQueryEditor-VariableQuery",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        "refresh": 1,
+        "regex": "",
+        "regexApplyTo": "value",
+        "sort": 1,
+        "type": "query"
       }
     ]
   },
@@ -196,11 +390,16 @@
     "to": "now"
   },
   "timepicker": {
-    "refresh_intervals": ["100ms", "200ms", "500ms", "1s"]
+    "refresh_intervals": [
+      "100ms",
+      "200ms",
+      "500ms",
+      "1s"
+    ]
   },
   "timezone": "browser",
   "title": "BLE Acceleration Overview Copy",
   "uid": "adqj5zw",
-  "version": 1,
+  "version": 7,
   "weekStart": ""
 }
