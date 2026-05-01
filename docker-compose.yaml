@@ -37,7 +37,7 @@ services:
     device_1:
         profiles:
             - victor
-        image: knockshadow-backend:latest
+        image: loseardes77/knockshadow-backend:latest
         depends_on:
             db:
                 condition: service_healthy
@@ -53,7 +53,7 @@ services:
     device_2:
         profiles:
             - hector
-        image: knockshadow-backend:latest
+        image: loseardes77/knockshadow-backend:latest
         depends_on:
             db:
                 condition: service_healthy
@@ -70,7 +70,7 @@ services:
     device_3:
         profiles:
             - cristian
-        image: knockshadow-backend:latest
+        image: loseardes77/knockshadow-backend:latest
         depends_on:
             db:
                 condition: service_healthy

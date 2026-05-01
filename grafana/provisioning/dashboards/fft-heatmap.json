@@ -1,0 +1,129 @@
+{
+  "__inputs": [],
+  "__requires": [],
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "scheme", "scheme": "Spectral" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": { "exponent": 0.5, "fill": "dark-orange", "mode": "scheme", "reverse": false, "scale": "exponential", "scheme": "Spectral", "steps": 64 },
+        "exemplars": { "color": "rgba(255,0,255,0.7)" },
+        "filterValues": { "le": 1e-9 },
+        "legend": { "show": true },
+        "rowsFrame": { "layout": "auto", "value": "Freq (Hz)" },
+        "tooltip": { "mode": "single", "showColorScale": false, "yHistogram": false },
+        "yAxis": { "axisLabel": "Freq (Hz)", "axisPlacement": "left", "unit": "short" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  captured_at AS time,\n  (generate_subscripts(magnitudes_x, 1) - 1)::text AS metric,\n  unnest(magnitudes_x) AS value\nFROM fft_snapshots\nWHERE $__timeFilter(captured_at)\nORDER BY captured_at",
+          "refId": "A"
+        }
+      ],
+      "title": "FFT Heatmap — Eje X",
+      "type": "heatmap"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "scheme", "scheme": "Spectral" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
+      "id": 2,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": { "exponent": 0.5, "fill": "dark-orange", "mode": "scheme", "reverse": false, "scale": "exponential", "scheme": "Spectral", "steps": 64 },
+        "exemplars": { "color": "rgba(255,0,255,0.7)" },
+        "filterValues": { "le": 1e-9 },
+        "legend": { "show": true },
+        "rowsFrame": { "layout": "auto", "value": "Freq (Hz)" },
+        "tooltip": { "mode": "single", "showColorScale": false, "yHistogram": false },
+        "yAxis": { "axisLabel": "Freq (Hz)", "axisPlacement": "left", "unit": "short" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  captured_at AS time,\n  (generate_subscripts(magnitudes_y, 1) - 1)::text AS metric,\n  unnest(magnitudes_y) AS value\nFROM fft_snapshots\nWHERE $__timeFilter(captured_at)\nORDER BY captured_at",
+          "refId": "A"
+        }
+      ],
+      "title": "FFT Heatmap — Eje Y",
+      "type": "heatmap"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "scheme", "scheme": "Spectral" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 16 },
+      "id": 3,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "color": { "exponent": 0.5, "fill": "dark-orange", "mode": "scheme", "reverse": false, "scale": "exponential", "scheme": "Spectral", "steps": 64 },
+        "exemplars": { "color": "rgba(255,0,255,0.7)" },
+        "filterValues": { "le": 1e-9 },
+        "legend": { "show": true },
+        "rowsFrame": { "layout": "auto", "value": "Freq (Hz)" },
+        "tooltip": { "mode": "single", "showColorScale": false, "yHistogram": false },
+        "yAxis": { "axisLabel": "Freq (Hz)", "axisPlacement": "left", "unit": "short" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "knockshadow-postgres" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  captured_at AS time,\n  (generate_subscripts(magnitudes_z, 1) - 1)::text AS metric,\n  unnest(magnitudes_z) AS value\nFROM fft_snapshots\nWHERE $__timeFilter(captured_at)\nORDER BY captured_at",
+          "refId": "A"
+        }
+      ],
+      "title": "FFT Heatmap — Eje Z",
+      "type": "heatmap"
+    }
+  ],
+  "refresh": "500ms",
+  "schemaVersion": 39,
+  "tags": ["fft", "knockshadow"],
+  "time": { "from": "now-5m", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "FFT Heatmap",
+  "uid": "fft-heatmap-ks",
+  "version": 1
+}

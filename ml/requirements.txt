@@ -1,0 +1,13 @@
+# app + pipeline
+psycopg2-binary>=2.9
+pandas>=2.0
+numpy>=1.24
+scipy>=1.11
+streamlit>=1.35
+plotly>=5.18
+
+# training only (tensorflow no soporta Python 3.14, usar PyTorch)
+torch>=2.9
+scikit-learn>=1.4
+matplotlib>=3.8
+seaborn>=0.13
