@@ -76,7 +76,10 @@ with st.sidebar:
     if new_threshold != st.session_state.last_threshold:
         st.session_state.threshold = new_threshold
         st.session_state.last_threshold = new_threshold
-        if st.session_state.merged_df is not None and not st.session_state.merged_df.empty:
+        if (
+            st.session_state.merged_df is not None
+            and not st.session_state.merged_df.empty
+        ):
             peaks = detect_hits(st.session_state.merged_df, threshold=new_threshold)
             st.session_state.peaks = peaks
             st.session_state.windows = create_windows(st.session_state.merged_df, peaks)
@@ -111,7 +114,9 @@ with col_control:
             st.rerun()
 
     if st.session_state.start_time and st.session_state.end_time:
-        duration = (st.session_state.end_time - st.session_state.start_time).total_seconds()
+        duration = (
+            st.session_state.end_time - st.session_state.start_time
+        ).total_seconds()
         st.metric("Duración grabada", f"{duration:.1f} s")
 
     # Labeling — only shown after a valid recording
@@ -124,7 +129,9 @@ with col_control:
         label = f"{punch_type}_{position}"
         st.info(f"Etiqueta: **{label}**")
 
-        n_windows = len(st.session_state.windows) if st.session_state.windows is not None else 0
+        n_windows = (
+            len(st.session_state.windows) if st.session_state.windows is not None else 0
+        )
         st.metric("Ventanas detectadas", n_windows)
 
         if st.button(
@@ -151,7 +158,9 @@ with col_viz:
         # Load and process data only once per recording
         if st.session_state.merged_df is None:
             with st.spinner("Cargando datos de la base de datos..."):
-                t_start = st.session_state.start_time - datetime.timedelta(milliseconds=300)
+                t_start = st.session_state.start_time - datetime.timedelta(
+                    milliseconds=300
+                )
                 t_end = st.session_state.end_time + datetime.timedelta(milliseconds=300)
                 raw = load_data(t_start, t_end)
 
@@ -186,8 +195,13 @@ with col_viz:
 
             # Magnitude row
             fig.add_trace(
-                go.Scatter(y=merged["mag"].values, name="magnitud", line=dict(color="orange", width=2)),
-                row=1, col=1,
+                go.Scatter(
+                    y=merged["mag"].values,
+                    name="magnitud",
+                    line=dict(color="orange", width=2),
+                ),
+                row=1,
+                col=1,
             )
             if len(peaks) > 0:
                 fig.add_trace(
@@ -198,28 +212,48 @@ with col_viz:
                         name="golpes",
                         marker=dict(color="red", size=10, symbol="x"),
                     ),
-                    row=1, col=1,
+                    row=1,
+                    col=1,
                 )
             fig.add_hline(
                 y=st.session_state.threshold,
                 line_dash="dash",
                 line_color="red",
                 opacity=0.5,
-                row=1, col=1,
+                row=1,
+                col=1,
             )
 
             # Sensor 1 axes
-            for col_name, color in [("x1", "#1f77b4"), ("y1", "#2ca02c"), ("z1", "#d62728")]:
+            for col_name, color in [
+                ("x1", "#1f77b4"),
+                ("y1", "#2ca02c"),
+                ("z1", "#d62728"),
+            ]:
                 fig.add_trace(
-                    go.Scatter(y=merged[col_name].values, name=col_name, line=dict(color=color, width=1)),
-                    row=2, col=1,
+                    go.Scatter(
+                        y=merged[col_name].values,
+                        name=col_name,
+                        line=dict(color=color, width=1),
+                    ),
+                    row=2,
+                    col=1,
                 )
 
             # Sensor 2 axes
-            for col_name, color in [("x2", "#9467bd"), ("y2", "#8c564b"), ("z2", "#e377c2")]:
+            for col_name, color in [
+                ("x2", "#9467bd"),
+                ("y2", "#8c564b"),
+                ("z2", "#e377c2"),
+            ]:
                 fig.add_trace(
-                    go.Scatter(y=merged[col_name].values, name=col_name, line=dict(color=color, width=1)),
-                    row=3, col=1,
+                    go.Scatter(
+                        y=merged[col_name].values,
+                        name=col_name,
+                        line=dict(color=color, width=1),
+                    ),
+                    row=3,
+                    col=1,
                 )
 
             fig.update_layout(height=520, margin=dict(t=40, b=10), showlegend=True)

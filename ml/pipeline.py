@@ -4,17 +4,20 @@ import pandas as pd
 import psycopg2
 from scipy.signal import find_peaks, butter, filtfilt
 
-DB_URL = os.getenv("DATABASE_URL", "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow")
+DB_URL = os.getenv(
+    "DATABASE_URL", "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
+)
 SENSOR_MAC_1 = os.getenv("SENSOR_MAC_1", "DF:65:81:D0:D7:E5")
 SENSOR_MAC_2 = os.getenv("SENSOR_MAC_2", "CB:01:10:3E:0D:61")
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "60"))
 WINDOW_SIZE = int(os.getenv("WINDOW_SIZE", "64"))
-HIT_THRESHOLD_G = float(os.getenv("HIT_THRESHOLD_G", "8.0"))
+HIT_THRESHOLD_G = float(os.getenv("HIT_THRESHOLD_G", "4.0"))
 
 _DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DEFAULT_DATASET = os.path.join(_DATA_DIR, "dataset.npz")
 
 FEATURE_COLS = ["x1", "y1", "z1", "x2", "y2", "z2"]
+SENSOR_SCALE = float(os.getenv("SENSOR_SCALE", "100.0"))  # raw units per G
 
 
 def load_data(start_time, end_time, db_url: str = DB_URL) -> pd.DataFrame:
@@ -26,13 +29,17 @@ def load_data(start_time, end_time, db_url: str = DB_URL) -> pd.DataFrame:
       AND device_mac IN (%s, %s)
     ORDER BY received_at ASC;
     """
-    df = pd.read_sql(query, conn, params=(start_time, end_time, SENSOR_MAC_1, SENSOR_MAC_2))
+    df = pd.read_sql(
+        query, conn, params=(start_time, end_time, SENSOR_MAC_1, SENSOR_MAC_2)
+    )
     conn.close()
     df["received_at"] = pd.to_datetime(df["received_at"], utc=True)
     return df
 
 
-def lowpass_filter(signal: np.ndarray, cutoff: float = 10.0, fs: int = SAMPLE_RATE) -> np.ndarray:
+def lowpass_filter(
+    signal: np.ndarray, cutoff: float = 10.0, fs: int = SAMPLE_RATE
+) -> np.ndarray:
     # filtfilt needs at least padlen = 3 * max(len(a), len(b)) - 1 = 9 samples for order-3 filter
     if len(signal) <= 9:
         return signal
@@ -48,8 +55,12 @@ def merge_sensors(
     df1 = df[df["device_mac"] == mac1][["received_at", "x", "y", "z"]].copy()
     df2 = df[df["device_mac"] == mac2][["received_at", "x", "y", "z"]].copy()
 
-    df1 = df1.sort_values("received_at").rename(columns={"x": "x1", "y": "y1", "z": "z1"})
-    df2 = df2.sort_values("received_at").rename(columns={"x": "x2", "y": "y2", "z": "z2"})
+    df1 = df1.sort_values("received_at").rename(
+        columns={"x": "x1", "y": "y1", "z": "z1"}
+    )
+    df2 = df2.sort_values("received_at").rename(
+        columns={"x": "x2", "y": "y2", "z": "z2"}
+    )
 
     if df1.empty or df2.empty:
         return pd.DataFrame()
@@ -67,7 +78,7 @@ def merge_sensors(
         return pd.DataFrame()
 
     for col in FEATURE_COLS:
-        merged[col] = lowpass_filter(merged[col].values)
+        merged[col] = lowpass_filter(merged[col].values / SENSOR_SCALE)
 
     merged["mag1"] = np.sqrt(merged["x1"] ** 2 + merged["y1"] ** 2 + merged["z1"] ** 2)
     merged["mag2"] = np.sqrt(merged["x2"] ** 2 + merged["y2"] ** 2 + merged["z2"] ** 2)

@@ -159,6 +159,10 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
             maybe_sample = rx.recv() => {
                 match maybe_sample {
                     Some(sample) => {
+                        if -20000.0 > sample.z || sample.z > 20000.0 {
+                            debug!("discarding outlier sample: {:?}", sample);
+                            continue;
+                        }
                         buffer.push(sample);
                         // Umbral de lote: reduce costo por transaccion.
                         if buffer.len() >= 128 {
