@@ -22,7 +22,7 @@ use tracing::{debug, info, warn};
 /// 3. Recorre perifericos descubiertos y compara direccion MAC.
 /// 4. Si coincide, conecta (si hace falta) y devuelve el dispositivo.
 pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), Box<dyn Error>> {
-    debug!("Attempting to connect to device: {}", mac);
+    info!("Connecting to device: {}", mac);
 
     // Crea el manager BLE y toma el primer adaptador disponible.
     let manager = Manager::new().await?;
@@ -48,12 +48,12 @@ pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), 
         {
             // Si no hay nombre publicitado, usa un valor por defecto.
             let name = props.local_name.clone().unwrap_or("Unknown".to_string());
-            info!("Device found: {} ({})", name, mac);
+            info!("Device found {} ({}), connecting...", name, mac);
             if peripheral.is_connected().await? {
                 info!("Already connected to: {}", mac);
                 return Ok((name, peripheral));
             }
-            info!("Connecting to device...");
+
             peripheral.connect().await?;
             info!("Successfully connected to: {}", mac);
             return Ok((name, peripheral));
