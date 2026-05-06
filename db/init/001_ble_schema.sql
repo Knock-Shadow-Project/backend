@@ -15,3 +15,14 @@ CREATE TABLE IF NOT EXISTS ble_samples (
 SELECT create_hypertable('ble_samples', 'received_at', if_not_exists => TRUE, migrate_data => TRUE);
 
 CREATE INDEX IF NOT EXISTS idx_ble_samples_received_at ON ble_samples(received_at);
+
+CREATE TABLE IF NOT EXISTS device_battery_readings (
+    id BIGSERIAL PRIMARY KEY,
+    device_mac TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    battery_level SMALLINT NOT NULL,
+    read_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_battery_read_at ON device_battery_readings(read_at);
+CREATE INDEX IF NOT EXISTS idx_battery_device ON device_battery_readings(device_mac);

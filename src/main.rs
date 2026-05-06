@@ -1,8 +1,9 @@
 use futures::StreamExt;
-use tracing::{debug, info};
+use tokio::time::{interval, Duration};
+use tracing::{debug, info, warn};
 
 use crate::bt::decode_data;
-use crate::storage::{BleSample, DbWritter};
+use crate::storage::{BatteryReading, BleSample, DbWritter};
 
 mod bt;
 mod storage;
@@ -31,11 +32,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (name, device) = bt::connect_device(mac.clone()).await?;
     info!("Connected to device: {}", name);
 
+    // Clonar el peripheral para la tarea de bateria.
+    let device_for_battery = device.clone();
+
     // 2) Apertura de stream de notificaciones.
-    let mut stream = bt::stream_data(device).await?;
+    let mut stream = bt::stream_data(&device).await?;
     info!("Streaming BLE data to PostgreSQL...");
 
-    // 3) Procesamiento continuo de cada notificacion.
+    // 3) Tarea de fondo: lee nivel de bateria cada 30 segundos.
+    let writer_battery = writer.clone();
+    let mac_battery = mac.clone();
+    let name_battery = name.clone();
+    tokio::spawn(async move {
+        let mut tick = interval(Duration::from_secs(30));
+        loop {
+            tick.tick().await;
+            match bt::read_battery_level(&device_for_battery).await {
+                Ok(Some(level)) => {
+                    let reading = BatteryReading {
+                        device_mac: mac_battery.clone(),
+                        device_name: name_battery.clone(),
+                        battery_level: level as i16,
+                    };
+                    if let Err(err) = writer_battery.send_battery(reading).await {
+                        debug!("battery writer queue closed: {}", err);
+                        break;
+                    }
+                }
+                Ok(None) => {
+                    debug!("battery level characteristic not available");
+                }
+                Err(err) => {
+                    warn!("failed to read battery level: {}", err);
+                }
+            }
+        }
+    });
+
+    // 4) Procesamiento continuo de cada notificacion.
     while let Some(raw) = stream.next().await {
         if let Some((ble_ts, x, y, z)) = decode_data(&raw) {
             let sample = BleSample {
@@ -46,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 y,
                 z,
             };
-            if let Err(err) = writer.send(sample).await {
+            if let Err(err) = writer.send_sample(sample).await {
                 debug!("writer queue closed: {}", err);
                 break;
             }

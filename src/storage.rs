@@ -23,6 +23,21 @@ pub struct BleSample {
     pub z: f32,
 }
 
+/// Lectura de nivel de bateria BLE.
+#[derive(Debug, Clone)]
+pub struct BatteryReading {
+    pub device_mac: String,
+    pub device_name: String,
+    pub battery_level: i16,
+}
+
+/// Registro unificado para el canal de escritura a BD.
+#[derive(Debug, Clone)]
+pub enum DbRecord {
+    Sample(BleSample),
+    Battery(BatteryReading),
+}
+
 /// Estadisticas para monitorear rendimiento del escritor.
 #[derive(Clone, Copy, Debug)]
 struct WriterStats {
@@ -44,8 +59,9 @@ impl WriterStats {
 /// Escritor asincrono basado en canal para enviar muestras a PostgreSQL.
 ///
 /// La idea es evitar que el loop de lectura BLE quede bloqueado por I/O de base de datos.
+#[derive(Clone)]
 pub struct DbWritter {
-    tx: mpsc::Sender<BleSample>,
+    tx: mpsc::Sender<DbRecord>,
 }
 
 impl DbWritter {
@@ -87,8 +103,19 @@ impl DbWritter {
     }
 
     /// Encola una muestra para que sea persistida por el writer en segundo plano.
-    pub async fn send(&self, sample: BleSample) -> Result<(), mpsc::error::SendError<BleSample>> {
-        self.tx.send(sample).await
+    pub async fn send_sample(
+        &self,
+        sample: BleSample,
+    ) -> Result<(), mpsc::error::SendError<DbRecord>> {
+        self.tx.send(DbRecord::Sample(sample)).await
+    }
+
+    /// Encola una lectura de bateria para que sea persistida por el writer en segundo plano.
+    pub async fn send_battery(
+        &self,
+        reading: BatteryReading,
+    ) -> Result<(), mpsc::error::SendError<DbRecord>> {
+        self.tx.send(DbRecord::Battery(reading)).await
     }
 }
 
@@ -114,6 +141,17 @@ async fn init_schema(client: &Client) -> Result<(), tokio_postgres::Error> {
             SELECT create_hypertable('ble_samples', 'received_at', if_not_exists => TRUE, migrate_data => TRUE);
 
             CREATE INDEX IF NOT EXISTS idx_ble_samples_received_at ON ble_samples(received_at);
+
+            CREATE TABLE IF NOT EXISTS device_battery_readings (
+                id BIGSERIAL PRIMARY KEY,
+                device_mac TEXT NOT NULL,
+                device_name TEXT NOT NULL,
+                battery_level SMALLINT NOT NULL,
+                read_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_battery_read_at ON device_battery_readings(read_at);
+            CREATE INDEX IF NOT EXISTS idx_battery_device ON device_battery_readings(device_mac);
             ",
         )
         .await
@@ -125,7 +163,7 @@ async fn init_schema(client: &Client) -> Result<(), tokio_postgres::Error> {
 /// - Inmediato al alcanzar 128 muestras.
 /// - Periodico cada 50 ms si hay datos pendientes.
 /// - Final al cerrar el canal.
-async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
+async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
     let mut stats = WriterStats::new();
 
     let insert_stmt = match client
@@ -144,6 +182,22 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
         }
     };
 
+    let battery_stmt = match client
+        .prepare(
+            "
+            INSERT INTO device_battery_readings (device_mac, device_name, battery_level)
+            VALUES ($1, $2, $3)
+            ",
+        )
+        .await
+    {
+        Ok(stmt) => stmt,
+        Err(err) => {
+            error!("failed to prepare battery insert statement: {}", err);
+            return;
+        }
+    };
+
     // Tick periodico para limitar latencia en lotes pequenos.
     let mut tick = interval(Duration::from_millis(
         env::var("FLUSH_INTERVAL_MS")
@@ -155,27 +209,29 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
     // Tick para reportar tasa de datos cada 5 segundos.
     let mut info_tick = interval(Duration::from_secs(5));
     // Buffer reusable para minimizar realocaciones.
-    let mut buffer: Vec<BleSample> = Vec::with_capacity(256);
+    let mut buffer: Vec<DbRecord> = Vec::with_capacity(256);
 
-    // Loop principal: espera 128 muestras o 50 ms para enviar un lote.
+    // Loop principal: espera 128 registros o 50 ms para enviar un lote.
     loop {
         tokio::select! {
-            maybe_sample = rx.recv() => {
-                match maybe_sample {
-                    Some(sample) => {
-                        if -20000.0 > sample.z || sample.z > 20000.0 {
-                            debug!("discarding outlier sample: {:?}", sample);
-                            continue;
+            maybe_record = rx.recv() => {
+                match maybe_record {
+                    Some(record) => {
+                        if let DbRecord::Sample(ref sample) = record {
+                            if -20000.0 > sample.z || sample.z > 20000.0 {
+                                debug!("discarding outlier sample: {:?}", sample);
+                                continue;
+                            }
                         }
-                        buffer.push(sample);
+                        buffer.push(record);
                         // Umbral de lote: reduce costo por transaccion.
                         if buffer.len() >= 128 {
-                            flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
+                            flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
                         }
                     }
                     None => {
                         if !buffer.is_empty() {
-                            flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
+                            flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
                         }
                         info!("sample channel closed, writer loop stopping");
                         break;
@@ -184,7 +240,7 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
             }
             _ = tick.tick() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &insert_stmt, &mut buffer, &mut stats).await;
+                    flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
                 }
             }
             _ = info_tick.tick() => {
@@ -204,7 +260,8 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<BleSample>) {
 async fn flush_batch(
     client: &mut Client,
     stmt: &Statement,
-    buffer: &mut Vec<BleSample>,
+    battery_stmt: &Statement,
+    buffer: &mut Vec<DbRecord>,
     stats: &mut WriterStats,
 ) {
     // Mueve el contenido del buffer para liberar al productor cuanto antes.
@@ -214,28 +271,50 @@ async fn flush_batch(
     let tx = match client.transaction().await {
         Ok(tx) => tx,
         Err(err) => {
-            error!("failed to open transaction: {}", err);
+            // TODO: retry connection to client
+
+            error!("failed to start transaction: {}", err);
             return;
         }
     };
 
-    for sample in &pending {
-        if let Err(err) = tx
-            .execute(
-                stmt,
-                &[
-                    &sample.device_mac,
-                    &sample.device_name,
-                    &sample.ble_ts,
-                    &sample.x,
-                    &sample.y,
-                    &sample.z,
-                ],
-            )
-            .await
-        {
-            error!("failed to insert sample: {}", err);
-            return;
+    for record in &pending {
+        match record {
+            DbRecord::Sample(sample) => {
+                if let Err(err) = tx
+                    .execute(
+                        stmt,
+                        &[
+                            &sample.device_mac,
+                            &sample.device_name,
+                            &sample.ble_ts,
+                            &sample.x,
+                            &sample.y,
+                            &sample.z,
+                        ],
+                    )
+                    .await
+                {
+                    error!("failed to insert sample: {}", err);
+                    return;
+                }
+            }
+            DbRecord::Battery(reading) => {
+                if let Err(err) = tx
+                    .execute(
+                        battery_stmt,
+                        &[
+                            &reading.device_mac,
+                            &reading.device_name,
+                            &reading.battery_level,
+                        ],
+                    )
+                    .await
+                {
+                    error!("failed to insert battery reading: {}", err);
+                    return;
+                }
+            }
         }
     }
 
@@ -252,5 +331,5 @@ async fn flush_batch(
     }
     stats.last_report = std::time::Instant::now();
 
-    debug!("flushed {} samples", pending.len());
+    debug!("flushed {} records", pending.len());
 }

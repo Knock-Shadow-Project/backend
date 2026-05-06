@@ -14,6 +14,9 @@ use futures::stream::StreamExt;
 use std::error::Error;
 use tracing::{debug, info, warn};
 
+/// UUID de la caracteristica Battery Level.
+const BATTERY_LEVEL_CHAR_UUID: &str = "00002a19-0000-1000-8000-00805f9b34fb";
+
 /// Busca un dispositivo BLE por MAC y devuelve su nombre y handle `Peripheral`.
 ///
 /// Flujo:
@@ -70,7 +73,7 @@ pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), 
 /// - Tienen UUID terminado en `-0001-11e1-ac36-0002a5d5c51b`.
 /// - Exponen la propiedad `NOTIFY`.
 pub(crate) async fn stream_data(
-    device: Peripheral,
+    device: &Peripheral,
 ) -> Result<impl futures::Stream<Item = Vec<u8>>, Box<dyn Error>> {
     debug!("Discovering services");
     device.discover_services().await?;
@@ -134,6 +137,43 @@ pub fn decode_data(data: &[u8]) -> Option<(Option<u16>, f32, f32, f32)> {
     Some((ts, x, y, z))
 }
 
+/// Lee el nivel de bateria desde el servicio estandar BLE Battery Service.
+///
+/// Devuelve `Some(u8)` con el porcentaje (0-100) si la caracteristica existe,
+/// o `None` si no esta disponible.
+pub async fn read_battery_level(device: &Peripheral) -> Result<Option<u8>, btleplug::Error> {
+    debug!("Reading battery level...");
+    // Asegura que los servicios esten descubiertos.
+    if device.services().is_empty() {
+        device.discover_services().await?;
+    }
+
+    for characteristic in device.characteristics() {
+        let uuid_str = characteristic.uuid.to_string();
+        if uuid_str == BATTERY_LEVEL_CHAR_UUID {
+            debug!("Found battery level characteristic");
+            match device.read(&characteristic).await {
+                Ok(data) if !data.is_empty() => {
+                    let level = data[0];
+                    info!("Battery level read: {}%", level);
+                    return Ok(Some(level));
+                }
+                Ok(_) => {
+                    warn!("Battery characteristic returned empty data");
+                    return Ok(None);
+                }
+                Err(err) => {
+                    warn!("Failed to read battery level: {}", err);
+                    return Err(err);
+                }
+            }
+        }
+    }
+
+    debug!("Battery level characteristic not found");
+    Ok(None)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,7 +193,7 @@ mod tests {
         let mac = "DF:65:81:D0:D7:E5".to_string();
         info!("Starting stream test");
         let (_, device) = connect_device(mac).await.unwrap();
-        let stream_result = stream_data(device).await;
+        let stream_result = stream_data(&device).await;
         assert!(stream_result.is_ok());
 
         let mut stream = stream_result.unwrap();
