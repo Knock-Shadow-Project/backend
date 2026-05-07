@@ -1,0 +1,16 @@
+[package]
+name = "api-db"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+axum = { version = "0.8.9", features = ["ws"] }
+bigdecimal = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+jsonwebtoken = "9.3.0"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-native-tls", "postgres", "chrono", "bigdecimal"] }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
