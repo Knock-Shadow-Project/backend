@@ -1,87 +1,101 @@
+version: "3.8"
+
 services:
-    db:
-        image: timescale/timescaledb:latest-pg17
-        environment:
-            POSTGRES_USER: knockshadow
-            POSTGRES_PASSWORD: knockshadow
-            POSTGRES_DB: knockshadow
-        ports:
-            - "5432:5432"
-        volumes:
-            - db_data_pg18:/var/lib/postgresql
-            - ./db/init:/docker-entrypoint-initdb.d:ro
-        healthcheck:
-            test:
-                [
-                    "CMD-SHELL",
-                    "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB} -h localhost -p 5432",
-                ]
-            interval: 10s
-            timeout: 5s
-            retries: 5
-            start_period: 30s
-    grafana:
-        image: grafana/grafana:latest
-        depends_on:
-            db:
-                condition: service_healthy
-        ports:
-            - "3000:3000"
-        environment:
-            GF_SECURITY_ADMIN_USER: admin
-            GF_SECURITY_ADMIN_PASSWORD: admin
-            GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 100ms
-        volumes:
-            - ./grafana/provisioning:/etc/grafana/provisioning:ro
+  db:
+    image: timescale/timescaledb:latest-pg16
+    container_name: knockshadow-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: knockshadow
+      POSTGRES_PASSWORD: knockshadow
+      POSTGRES_DB: knockshadow
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U knockshadow -d knockshadow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-    device_1:
-        profiles:
-            - victor
-        image: loseardes77/knockshadow-backend:latest
-        depends_on:
-            db:
-                condition: service_healthy
-        network_mode: host
-        privileged: true
-        volumes:
-            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
-        environment:
-            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
-            DEVICE_MAC: "DF:65:81:D0:D7:E5"
-            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
-            FLUSH_INTERVAL_MS: "50"
-    device_2:
-        profiles:
-            - hector
-        image: loseardes77/knockshadow-backend:latest
-        depends_on:
-            db:
-                condition: service_healthy
-        network_mode: host
-        privileged: true
-        volumes:
-            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
-        environment:
-            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
-            DEVICE_MAC: "CB:01:10:3E:0D:61"
-            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
-            FLUSH_INTERVAL_MS: "50"
+  api-db:
+    build:
+      context: .
+      dockerfile: Dockerfile.api-db
+    container_name: knockshadow-api
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
 
-    device_3:
-        profiles:
-            - cristian
-        image: loseardes77/knockshadow-backend:latest
-        depends_on:
-            db:
-                condition: service_healthy
-        network_mode: host
-        privileged: true
-        volumes:
-            - /run/dbus/system_bus_socket:/run/dbus/system_bus_socket
-        environment:
-            DBUS_SYSTEM_BUS_ADDRESS: "unix:path=/run/dbus/system_bus_socket"
-            DEVICE_MAC: "D3:CF:D9:A0:CD:58"
-            DATABASE_URL: "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow"
-            FLUSH_INTERVAL_MS: "50"
+  ble-stream:
+    build:
+      context: .
+      dockerfile: Dockerfile.ble-stream
+    container_name: knockshadow-ble
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
+      DEVICE_MAC: ${DEVICE_MAC:-DF:65:81:D0:D7:E5}
+    depends_on:
+      db:
+        condition: service_healthy
+    # Bluetooth requires privileged mode and access to the host D-Bus socket.
+    privileged: true
+    volumes:
+      - /var/run/dbus:/var/run/dbus:ro
+      - /dev/bus/usb:/dev/bus/usb
+    cap_add:
+      - NET_ADMIN
+    # If your BlueZ setup requires host networking, uncomment the next line.
+    # In that case change DATABASE_URL to point to the host IP.
+    # network_mode: host
+
+  ml-inference:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: knockshadow-ml-inference
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
+      API_BASE_URL: http://api-db:3000
+      WS_URL: ws://api-db:3000/ws
+    command:
+      - python
+      - main.py
+      - --api
+      - --ws
+      - --api-user-id=1
+    depends_on:
+      - api-db
+      - db
+
+  ml-app:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    container_name: knockshadow-ml-app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.port=8501
+      - --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    depends_on:
+      - db
+
 volumes:
-    db_data_pg18:
+  db-data:
