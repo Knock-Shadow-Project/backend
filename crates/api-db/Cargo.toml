@@ -3,11 +3,18 @@ name = "api-db"
 version.workspace = true
 edition.workspace = true
 
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+
 [dependencies]
 axum = { version = "0.8.9", features = ["ws"] }
+bcrypt = "0.17"
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-jsonwebtoken = "9.3.0"
+jsonwebtoken = "9"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-native-tls", "postgres", "chrono", "bigdecimal"] }

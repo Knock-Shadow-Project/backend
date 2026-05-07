@@ -1,6 +1,6 @@
 # Documentación de la API — KnockShadow
 
-URL base: `http://localhost:3000`
+Base URL: `http://localhost:3000`
 
 ---
 
@@ -22,10 +22,10 @@ Para obtener un token, usa el endpoint de login. El token expira tras **24 horas
 - [Login](#login)
 - [Registro](#registro)
 - [WebSocket](#websocket)
-- [USUARIO](#usuario)
-- [ENTRENAMIENTO](#entrenamiento)
-- [GOLPE](#golpe)
-- [HISTORIAL](#historial)
+- [Usuarios](#usuario)
+- [Entrenamientos](#entrenamiento)
+- [Golpes](#golpe)
+- [Hsitorial](#historial)
 
 ---
 
@@ -38,8 +38,8 @@ POST /login
 Content-Type: application/json
 
 {
-  "correo": "admin@example.com",
-  "contrasena": "2admin1"
+  "email": "admin@example.com",
+  "password": "2admin1"
 }
 ```
 
@@ -47,9 +47,9 @@ Content-Type: application/json
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "id_usuario": 1,
-  "nombre": "Admin",
-  "correo": "admin@example.com"
+  "user_id": 1,
+  "first_name": "Admin",
+  "email": "admin@example.com"
 }
 ```
 
@@ -68,19 +68,19 @@ POST /register
 Content-Type: application/json
 
 {
-  "nombre": "Juan",
-  "apellido": "Pérez",
-  "correo": "juan@example.com",
-  "contrasena": "secreto123",
-  "telefono": null,
-  "edad": null,
-  "peso": null,
-  "estatura": null,
-  "pais": null,
-  "ciudad": null,
-  "direccion": null,
-  "lateralidad": null,
-  "nivel": null
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john@example.com",
+  "password": "secret123",
+  "phone": null,
+  "age": null,
+  "weight": null,
+  "height": null,
+  "country": null,
+  "city": null,
+  "address": null,
+  "laterality": null,
+  "level": null
 }
 ```
 
@@ -88,9 +88,9 @@ Content-Type: application/json
 ```json
 {
   "token": "eyJhbGciOiJIUzI1NiIs...",
-  "id_usuario": 42,
-  "nombre": "Juan",
-  "correo": "juan@example.com"
+  "user_id": 42,
+  "first_name": "John",
+  "email": "john@example.com"
 }
 ```
 
@@ -113,8 +113,8 @@ El servidor retransmite cualquier mensaje de texto recibido a todos los clientes
   "type": "punch_detected",
   "timestamp": "14:32:10.123",
   "predictions": [
-    {"clase": "jab_izquierda_arriba", "prob": 0.95},
-    {"clase": "cross_derecha_cabeza", "prob": 0.03}
+    {"class": "jab_izquierda_arriba", "prob": 0.95},
+    {"class": "cross_derecha_cabeza", "prob": 0.03}
   ]
 }
 ```
@@ -131,50 +131,50 @@ npx wscat -c ws://localhost:3000/ws -H "Authorization: Bearer <token>"
 ### Usuario
 ```json
 {
-  "id_usuario": 1,
-  "nombre": "Admin",
-  "apellido": "Admin",
-  "correo": "admin@example.com",
-  "telefono": "+34123456789",
-  "edad": 30,
-  "peso": "70.50",
-  "estatura": 175,
-  "pais": "España",
-  "ciudad": "Madrid",
-  "direccion": "Calle Principal 123",
-  "lateralidad": "Derecho",
-  "nivel": "Intermedio"
+  "user_id": 1,
+  "first_name": "Admin",
+  "last_name": "Admin",
+  "email": "admin@example.com",
+  "phone": "+34123456789",
+  "age": 30,
+  "weight": "70.50",
+  "height": 175,
+  "country": "Spain",
+  "city": "Madrid",
+  "address": "Main Street 123",
+  "laterality": "Right",
+  "level": "Intermediate"
 }
 ```
 
 ### Entrenamiento
 ```json
 {
-  "id_entrenamiento": 1,
-  "hora_inicio": "2024-06-01T10:00:00",
-  "hora_fin": "2024-06-01T11:00:00",
-  "tipo": "Estandar",
-  "calorias": 500,
-  "id_usuario": 1
+  "training_id": 1,
+  "start_time": "2024-06-01T10:00:00",
+  "end_time": "2024-06-01T11:00:00",
+  "training_type": "Standard",
+  "calories": 500,
+  "user_id": 1
 }
 ```
 
 ### Golpe
 ```json
 {
-  "id_golpe": 1,
-  "nombre": "Jab",
-  "extremidad": "Derecha",
-  "posicion": "Cabeza"
+  "punch_id": 1,
+  "name": "Jab",
+  "limb": "Right",
+  "position": "Head"
 }
 ```
 
 ### Historial
 ```json
 {
-  "id_entrenamiento": 1,
-  "id_golpe": 1,
-  "potencia": "75.50"
+  "training_id": 1,
+  "punch_id": 1,
+  "power": "75.50"
 }
 ```
 
@@ -182,67 +182,67 @@ npx wscat -c ws://localhost:3000/ws -H "Authorization: Bearer <token>"
 Igual que `Historial` más:
 ```json
 {
-  "nombre": "Jab",
-  "extremidad": "Derecha",
-  "posicion": "Cabeza"
+  "name": "Jab",
+  "limb": "Right",
+  "position": "Head"
 }
 ```
 
 ---
 
-## USUARIO
+## Usuarios
 
 Todos los endpoints de `USUARIO` requieren autenticación Bearer.
 
 ### Listar todos los usuarios
 ```
-GET /usuarios
+GET /users
 Authorization: Bearer <token>
 ```
 
-### Obtener un usuario
+### Get a user
 ```
-GET /usuarios/:id
+GET /users/:id
 Authorization: Bearer <token>
 ```
 
 ### Crear un usuario
 ```
-POST /usuarios
+POST /users
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "nombre": "John",
-  "apellido": "Doe",
-  "correo": "john@example.com",
-  "contrasena": "secret",
-  "telefono": null,
-  "edad": null,
-  "peso": null,
-  "estatura": null,
-  "pais": null,
-  "ciudad": null,
-  "direccion": null,
-  "lateralidad": null,
-  "nivel": null
+  "first_name": "John",
+  "last_name": "Doe",
+  "email": "john@example.com",
+  "password": "secret",
+  "phone": null,
+  "age": null,
+  "weight": null,
+  "height": null,
+  "country": null,
+  "city": null,
+  "address": null,
+  "laterality": null,
+  "level": null
 }
 ```
 
 ### Actualizar un usuario
 ```
-PUT /usuarios/:id
+PUT /users/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "nombre": "Jane"
+  "first_name": "Jane"
 }
 ```
 
 ### Eliminar un usuario
 ```
-DELETE /usuarios/:id
+DELETE /users/:id
 Authorization: Bearer <token>
 ```
 
@@ -254,154 +254,154 @@ Todos los endpoints de `ENTRENAMIENTO` requieren autenticación Bearer.
 
 ### Listar todos los entrenamientos
 ```
-GET /entrenamientos
+GET /trainings
 Authorization: Bearer <token>
 ```
 
 ### Obtener un entrenamiento
 ```
-GET /entrenamientos/:id
+GET /trainings/:id
 Authorization: Bearer <token>
 ```
 
 ### Crear un entrenamiento
 ```
-POST /entrenamientos
+POST /trainings
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "hora_inicio": "2024-06-01T10:00:00",
-  "hora_fin": null,
-  "tipo": "Estandar",
-  "calorias": null,
-  "id_usuario": 1
+  "start_time": "2024-06-01T10:00:00",
+  "end_time": null,
+  "training_type": "Standard",
+  "calories": null,
+  "user_id": 1
 }
 ```
 
 ### Actualizar un entrenamiento
 ```
-PUT /entrenamientos/:id
+PUT /trainings/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "hora_fin": "2024-06-01T11:00:00",
-  "calorias": 500
+  "end_time": "2024-06-01T11:00:00",
+  "calories": 500
 }
 ```
 
 ### Eliminar un entrenamiento
 ```
-DELETE /entrenamientos/:id
+DELETE /trainings/:id
 Authorization: Bearer <token>
 ```
 
 ### Listar entrenamientos por usuario
 ```
-GET /usuarios/:id/entrenamientos
+GET /users/:id/trainings
 Authorization: Bearer <token>
 ```
 
 ---
 
-## GOLPE
+## Golpe
 
 Todos los endpoints de `GOLPE` requieren autenticación Bearer.
 
-### Listar todos los golpes
+### List all punches
 ```
-GET /golpes
+GET /punches
 Authorization: Bearer <token>
 ```
 
 ### Obtener un golpe
 ```
-GET /golpes/:id
+GET /punches/:id
 Authorization: Bearer <token>
 ```
 
 ### Crear un golpe
 ```
-POST /golpes
+POST /punches
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "nombre": "Jab",
-  "extremidad": "Derecha",
-  "posicion": "Cabeza"
+  "name": "Jab",
+  "limb": "Right",
+  "position": "Head"
 }
 ```
 
 ### Actualizar un golpe
 ```
-PUT /golpes/:id
+PUT /punches/:id
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "posicion": "Cuerpo"
+  "position": "Body"
 }
 ```
 
 ### Eliminar un golpe
 ```
-DELETE /golpes/:id
+DELETE /punches/:id
 Authorization: Bearer <token>
 ```
 
 ---
 
-## HISTORIAL
+## Historial
 
 Todos los endpoints de `HISTORIAL` requieren autenticación Bearer.
 
 ### Listar todo el historial (con detalles del golpe)
 ```
-GET /historial
+GET /history
 Authorization: Bearer <token>
 ```
 
 ### Obtener una entrada del historial
 ```
-GET /historial/:id_entrenamiento/:id_golpe
+GET /history/:training_id/:punch_id
 Authorization: Bearer <token>
 ```
 
 ### Crear una entrada del historial
 ```
-POST /historial
+POST /history
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "id_entrenamiento": 1,
-  "id_golpe": 1,
-  "potencia": "75.50"
+  "training_id": 1,
+  "punch_id": 1,
+  "power": "75.50"
 }
 ```
 
 ### Actualizar una entrada del historial
 ```
-PUT /historial/:id_entrenamiento/:id_golpe
+PUT /history/:training_id/:punch_id
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
-  "potencia": "80.00"
+  "power": "80.00"
 }
 ```
 
 ### Eliminar una entrada del historial
 ```
-DELETE /historial/:id_entrenamiento/:id_golpe
+DELETE /history/:training_id/:punch_id
 Authorization: Bearer <token>
 ```
 
 ### Listar historial por entrenamiento
 ```
-GET /entrenamientos/:id/historial
+GET /trainings/:id/history
 Authorization: Bearer <token>
 ```
 

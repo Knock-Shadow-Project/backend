@@ -11,35 +11,35 @@ use crate::state::AppState;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route(
-            "/entrenamientos",
-            get(list_entrenamientos).post(create_entrenamiento),
+            "/trainings",
+            get(list_trainings).post(create_training),
         )
         .route(
-            "/entrenamientos/{id}",
-            get(get_entrenamiento)
-                .put(update_entrenamiento)
-                .delete(delete_entrenamiento),
+            "/trainings/{id}",
+            get(get_training)
+                .put(update_training)
+                .delete(delete_training),
         )
         .route(
-            "/usuarios/{id}/entrenamientos",
-            get(list_entrenamientos_by_usuario),
+            "/users/{id}/trainings",
+            get(list_trainings_by_user),
         )
 }
 
-async fn list_entrenamientos(
+async fn list_trainings(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Entrenamiento>>, StatusCode> {
     let items = sqlx::query_as::<_, Entrenamiento>("SELECT * FROM entrenamiento")
         .fetch_all(&state.pool)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to list entrenamientos: {}", e);
+            tracing::error!("Failed to list trainings: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     Ok(Json(items))
 }
 
-async fn get_entrenamiento(
+async fn get_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Entrenamiento>, StatusCode> {
@@ -52,14 +52,14 @@ async fn get_entrenamiento(
     .map_err(|e| match e {
         sqlx::Error::RowNotFound => StatusCode::NOT_FOUND,
         _ => {
-            tracing::error!("Failed to get entrenamiento: {}", e);
+            tracing::error!("Failed to get training: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     })?;
     Ok(Json(item))
 }
 
-async fn create_entrenamiento(
+async fn create_training(
     State(state): State<AppState>,
     Json(payload): Json<CreateEntrenamiento>,
 ) -> Result<Json<Entrenamiento>, StatusCode> {
@@ -68,21 +68,21 @@ async fn create_entrenamiento(
          VALUES ($1, $2, $3, $4, $5)
          RETURNING *",
     )
-    .bind(payload.hora_inicio)
-    .bind(payload.hora_fin)
-    .bind(&payload.tipo)
-    .bind(payload.calorias)
-    .bind(payload.id_usuario)
+    .bind(payload.start_time)
+    .bind(payload.end_time)
+    .bind(&payload.training_type)
+    .bind(payload.calories)
+    .bind(payload.user_id)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to create entrenamiento: {}", e);
+        tracing::error!("Failed to create training: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(item))
 }
 
-async fn update_entrenamiento(
+async fn update_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateEntrenamiento>,
@@ -97,25 +97,25 @@ async fn update_entrenamiento(
          WHERE id_entrenamiento = $6
          RETURNING *",
     )
-    .bind(payload.hora_inicio)
-    .bind(payload.hora_fin)
-    .bind(&payload.tipo)
-    .bind(payload.calorias)
-    .bind(payload.id_usuario)
+    .bind(payload.start_time)
+    .bind(payload.end_time)
+    .bind(&payload.training_type)
+    .bind(payload.calories)
+    .bind(payload.user_id)
     .bind(id)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| match e {
         sqlx::Error::RowNotFound => StatusCode::NOT_FOUND,
         _ => {
-            tracing::error!("Failed to update entrenamiento: {}", e);
+            tracing::error!("Failed to update training: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     })?;
     Ok(Json(item))
 }
 
-async fn delete_entrenamiento(
+async fn delete_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {
@@ -124,7 +124,7 @@ async fn delete_entrenamiento(
         .execute(&state.pool)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to delete entrenamiento: {}", e);
+            tracing::error!("Failed to delete training: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     if result.rows_affected() == 0 {
@@ -133,18 +133,18 @@ async fn delete_entrenamiento(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_entrenamientos_by_usuario(
+async fn list_trainings_by_user(
     State(state): State<AppState>,
-    Path(id_usuario): Path<i32>,
+    Path(user_id): Path<i32>,
 ) -> Result<Json<Vec<Entrenamiento>>, StatusCode> {
     let items = sqlx::query_as::<_, Entrenamiento>(
         "SELECT * FROM entrenamiento WHERE id_usuario = $1",
     )
-    .bind(id_usuario)
+    .bind(user_id)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to list entrenamientos by usuario: {}", e);
+        tracing::error!("Failed to list trainings by user: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(items))

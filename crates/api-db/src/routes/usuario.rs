@@ -5,32 +5,33 @@ use axum::{
     Json, Router,
 };
 
+use crate::auth::hash_password;
 use crate::models::{CreateUsuario, UpdateUsuario, Usuario};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route("/usuarios", get(list_usuarios).post(create_usuario))
+        .route("/users", get(list_users).post(create_user))
         .route(
-            "/usuarios/{id}",
-            get(get_usuario).put(update_usuario).delete(delete_usuario),
+            "/users/{id}",
+            get(get_user).put(update_user).delete(delete_user),
         )
 }
 
-async fn list_usuarios(State(state): State<AppState>) -> Result<Json<Vec<Usuario>>, StatusCode> {
+async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<Usuario>>, StatusCode> {
     let usuarios = sqlx::query_as::<_, Usuario>(
         "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel FROM usuario",
     )
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to list usuarios: {}", e);
+        tracing::error!("Failed to list users: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(usuarios))
 }
 
-async fn get_usuario(
+async fn get_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Usuario>, StatusCode> {
@@ -43,49 +44,62 @@ async fn get_usuario(
     .map_err(|e| match e {
         sqlx::Error::RowNotFound => StatusCode::NOT_FOUND,
         _ => {
-            tracing::error!("Failed to get usuario: {}", e);
+            tracing::error!("Failed to get user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     })?;
     Ok(Json(usuario))
 }
 
-async fn create_usuario(
+async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUsuario>,
 ) -> Result<Json<Usuario>, StatusCode> {
+    let hashed_password = hash_password(&payload.password).map_err(|e| {
+        tracing::error!("Password hash error: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     let usuario = sqlx::query_as::<_, Usuario>(
         "INSERT INTO usuario (nombre, apellido, correo, contrasena, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel",
     )
-    .bind(&payload.nombre)
-    .bind(&payload.apellido)
-    .bind(&payload.correo)
-    .bind(&payload.contrasena)
-    .bind(&payload.telefono)
-    .bind(payload.edad)
-    .bind(payload.peso)
-    .bind(payload.estatura)
-    .bind(&payload.pais)
-    .bind(&payload.ciudad)
-    .bind(&payload.direccion)
-    .bind(&payload.lateralidad)
-    .bind(&payload.nivel)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.email)
+    .bind(&hashed_password)
+    .bind(&payload.phone)
+    .bind(payload.age)
+    .bind(payload.weight)
+    .bind(payload.height)
+    .bind(&payload.country)
+    .bind(&payload.city)
+    .bind(&payload.address)
+    .bind(&payload.laterality)
+    .bind(&payload.level)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
-        tracing::error!("Failed to create usuario: {}", e);
+        tracing::error!("Failed to create user: {}", e);
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     Ok(Json(usuario))
 }
 
-async fn update_usuario(
+async fn update_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateUsuario>,
 ) -> Result<Json<Usuario>, StatusCode> {
+    let hashed_password = match payload.password {
+        Some(ref pwd) => Some(hash_password(pwd).map_err(|e| {
+            tracing::error!("Password hash error: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?),
+        None => None,
+    };
+
     let usuario = sqlx::query_as::<_, Usuario>(
         "UPDATE usuario SET
             nombre = COALESCE($1, nombre),
@@ -104,33 +118,33 @@ async fn update_usuario(
          WHERE id_usuario = $14
          RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel",
     )
-    .bind(&payload.nombre)
-    .bind(&payload.apellido)
-    .bind(&payload.correo)
-    .bind(&payload.contrasena)
-    .bind(&payload.telefono)
-    .bind(payload.edad)
-    .bind(payload.peso)
-    .bind(payload.estatura)
-    .bind(&payload.pais)
-    .bind(&payload.ciudad)
-    .bind(&payload.direccion)
-    .bind(&payload.lateralidad)
-    .bind(&payload.nivel)
+    .bind(&payload.first_name)
+    .bind(&payload.last_name)
+    .bind(&payload.email)
+    .bind(&hashed_password)
+    .bind(&payload.phone)
+    .bind(payload.age)
+    .bind(payload.weight)
+    .bind(payload.height)
+    .bind(&payload.country)
+    .bind(&payload.city)
+    .bind(&payload.address)
+    .bind(&payload.laterality)
+    .bind(&payload.level)
     .bind(id)
     .fetch_one(&state.pool)
     .await
     .map_err(|e| match e {
         sqlx::Error::RowNotFound => StatusCode::NOT_FOUND,
         _ => {
-            tracing::error!("Failed to update usuario: {}", e);
+            tracing::error!("Failed to update user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         }
     })?;
     Ok(Json(usuario))
 }
 
-async fn delete_usuario(
+async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {
@@ -139,7 +153,7 @@ async fn delete_usuario(
         .execute(&state.pool)
         .await
         .map_err(|e| {
-            tracing::error!("Failed to delete usuario: {}", e);
+            tracing::error!("Failed to delete user: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
     if result.rows_affected() == 0 {
