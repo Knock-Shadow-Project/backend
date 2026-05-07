@@ -1,22 +1,13 @@
-[package]
-name = "backend"
+[workspace]
+resolver ="3"
+members =  ["crates/*"]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
-default-run = "ble_stream"
+authors = ["Victor Galan", "Cristian Davila"]
 
-[[bin]]
-name = "ble_stream"
-path = "src/main.rs"
-
-
-[profile.release]
-opt-level = 3
-codegen-units = 1
-lto = true
-
-[dependencies]
-btleplug = "0.12.0"
-clap = { version = "4.6.1", features = ["derive"] }
+[workspace.dependencies]
 futures = "0.3.32"
 tokio = { version = "1.52.2", features = ["full"] }
 tracing = "0.1.44"
