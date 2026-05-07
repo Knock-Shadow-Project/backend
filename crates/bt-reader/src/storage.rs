@@ -217,12 +217,11 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
             maybe_record = rx.recv() => {
                 match maybe_record {
                     Some(record) => {
-                        if let DbRecord::Sample(ref sample) = record {
-                            if -20000.0 > sample.z || sample.z > 20000.0 {
+                        if let DbRecord::Sample(ref sample) = record
+                            && (-20000.0 > sample.z || sample.z > 20000.0) {
                                 debug!("discarding outlier sample: {:?}", sample);
                                 continue;
                             }
-                        }
                         buffer.push(record);
                         // Umbral de lote: reduce costo por transaccion.
                         if buffer.len() >= 128 {
