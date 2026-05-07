@@ -1,6 +1,6 @@
 # Bluetooth Streamer — Documentación
 
-El **Bluetooth Streamer** (`ble-stream`) es el servicio encargado de recibir telemetría en tiempo real desde los guantes inteligentes KnockShadow mediante **Bluetooth Low Energy (BLE)** y persistirla en **PostgreSQL/TimescaleDB**.
+El **Bluetooth Streamer** (`ble-stream`) es el servicio encargado de recibir telemetría en tiempo real desde el saco inteligente KnockShadow mediante **Bluetooth Low Energy (BLE)** y persistirla en **PostgreSQL/TimescaleDB**.
 
 ---
 
@@ -42,7 +42,7 @@ Este módulo utiliza la librería [`btleplug`](https://github.com/deviceplug/btl
 
 #### `decode_data(payload)`
 
-Decodifica el frame binario recibido del guante:
+Decodifica el frame binario recibido del sensor:
 
 | Campo | Tipo | Bytes | Descripción |
 |-------|------|-------|-------------|
