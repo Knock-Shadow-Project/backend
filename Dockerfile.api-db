@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.85-bookworm AS builder
+FROM rust:1.94-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,8 +23,8 @@ RUN cargo build -p api-db --release || true
 # Copy real sources
 COPY crates/api-db/src ./crates/api-db/src
 
-# Build the real binary
-RUN cargo build -p api-db --release
+# Force cargo to rebuild after source copy (update mtimes so cargo detects changes)
+RUN find crates/api-db/src -name '*.rs' -exec touch {} + && cargo build -p api-db --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -37,6 +37,6 @@ COPY --from=builder /app/target/release/api-db /usr/local/bin/api-db
 
 EXPOSE 3000
 ENV PORT=3000
-ENV RUST_LOG=info
+ENV RUST_LOG=debug
 
 CMD ["api-db"]

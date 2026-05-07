@@ -1,0 +1,419 @@
+{
+  "info": {
+    "_postman_id": "knockshadow-api",
+    "name": "KnockShadow API",
+    "description": "Colección de endpoints para probar la API de KnockShadow en Yaak",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/login",
+              "host": ["{{base_url}}"],
+              "path": ["login"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"correo\": \"usuario@ejemplo.com\",\n  \"contrasena\": \"password123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Registro",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": ["{{base_url}}"],
+              "path": ["register"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"correo\": \"juan.perez@ejemplo.com\",\n  \"contrasena\": \"secreto123\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Usuarios",
+      "item": [
+        {
+          "name": "Listar usuarios",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            }
+          }
+        },
+        {
+          "name": "Crear usuario",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Juan\",\n  \"apellido\": \"Pérez\",\n  \"correo\": \"juan.perez@ejemplo.com\",\n  \"contrasena\": \"secreto123\",\n  \"telefono\": \"+593991234567\",\n  \"edad\": 25,\n  \"peso\": \"75.5\",\n  \"estatura\": 175,\n  \"pais\": \"Ecuador\",\n  \"ciudad\": \"Quito\",\n  \"direccion\": \"Av. Principal 123\",\n  \"lateralidad\": \"Diestro\",\n  \"nivel\": \"Intermedio\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Obtener usuario",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/usuarios/1",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "1"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar usuario",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/usuarios/1",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Juan Carlos\",\n  \"peso\": \"76.0\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Eliminar usuario",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/usuarios/1",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Entrenamientos",
+      "item": [
+        {
+          "name": "Listar entrenamientos",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos"]
+            }
+          }
+        },
+        {
+          "name": "Crear entrenamiento",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"hora_inicio\": \"2026-05-07T08:00:00\",\n  \"hora_fin\": \"2026-05-07T09:30:00\",\n  \"tipo\": \"Boxeo\",\n  \"calorias\": 450,\n  \"id_usuario\": 1\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Obtener entrenamiento",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos/1",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos", "1"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar entrenamiento",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos/1",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos", "1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"Kickboxing\",\n  \"calorias\": 500\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Eliminar entrenamiento",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos/1",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos", "1"]
+            }
+          }
+        },
+        {
+          "name": "Listar entrenamientos por usuario",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/usuarios/1/entrenamientos",
+              "host": ["{{base_url}}"],
+              "path": ["usuarios", "1", "entrenamientos"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Golpes",
+      "item": [
+        {
+          "name": "Listar golpes",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/golpes",
+              "host": ["{{base_url}}"],
+              "path": ["golpes"]
+            }
+          }
+        },
+        {
+          "name": "Crear golpe",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/golpes",
+              "host": ["{{base_url}}"],
+              "path": ["golpes"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Jab\",\n  \"extremidad\": \"Brazo izquierdo\",\n  \"posicion\": \"Alta\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Obtener golpe",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/golpes/1",
+              "host": ["{{base_url}}"],
+              "path": ["golpes", "1"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar golpe",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/golpes/1",
+              "host": ["{{base_url}}"],
+              "path": ["golpes", "1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nombre\": \"Cross\",\n  \"posicion\": \"Media\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Eliminar golpe",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/golpes/1",
+              "host": ["{{base_url}}"],
+              "path": ["golpes", "1"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Historial",
+      "item": [
+        {
+          "name": "Listar historial",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/historial",
+              "host": ["{{base_url}}"],
+              "path": ["historial"]
+            }
+          }
+        },
+        {
+          "name": "Crear historial",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/historial",
+              "host": ["{{base_url}}"],
+              "path": ["historial"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id_entrenamiento\": 1,\n  \"id_golpe\": 1,\n  \"potencia\": \"850.50\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Obtener historial",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/historial/1/1",
+              "host": ["{{base_url}}"],
+              "path": ["historial", "1", "1"]
+            }
+          }
+        },
+        {
+          "name": "Actualizar historial",
+          "request": {
+            "method": "PUT",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "url": {
+              "raw": "{{base_url}}/historial/1/1",
+              "host": ["{{base_url}}"],
+              "path": ["historial", "1", "1"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"potencia\": \"920.00\"\n}",
+              "options": { "raw": { "language": "json" } }
+            }
+          }
+        },
+        {
+          "name": "Eliminar historial",
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/historial/1/1",
+              "host": ["{{base_url}}"],
+              "path": ["historial", "1", "1"]
+            }
+          }
+        },
+        {
+          "name": "Listar historial por entrenamiento",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url}}/entrenamientos/1/historial",
+              "host": ["{{base_url}}"],
+              "path": ["entrenamientos", "1", "historial"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "WebSocket",
+      "item": [
+        {
+          "name": "Conexión WS",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{base_url_ws}}/ws",
+              "host": ["{{base_url_ws}}"],
+              "path": ["ws"]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "base_url_ws", "value": "ws://localhost:3000" },
+    { "key": "token", "value": "tu_jwt_aqui" }
+  ]
+}

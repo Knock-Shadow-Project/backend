@@ -7,12 +7,14 @@ mod historial;
 mod usuario;
 mod ws;
 
-use crate::auth::{auth_middleware, login_handler};
+use crate::auth::{auth_middleware, login_handler, register_handler};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
     // Public routes (no auth required)
-    let public = Router::new().route("/login", axum::routing::post(login_handler));
+    let public = Router::new()
+        .route("/login", axum::routing::post(login_handler))
+        .route("/register", axum::routing::post(register_handler));
 
     // Protected routes (Bearer token required)
     let protected = Router::new()

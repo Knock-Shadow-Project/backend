@@ -6,7 +6,7 @@ URL base: `http://localhost:3000`
 
 ## Autenticación
 
-Todos los endpoints **excepto** `POST /login` requieren un token JWT válido en la cabecera `Authorization`.
+Todos los endpoints **excepto** `POST /login` y `POST /register` requieren un token JWT válido en la cabecera `Authorization`.
 
 ```
 Authorization: Bearer <token>
@@ -20,6 +20,7 @@ Para obtener un token, usa el endpoint de login. El token expira tras **24 horas
 
 - [Autenticación](#autenticación)
 - [Login](#login)
+- [Registro](#registro)
 - [WebSocket](#websocket)
 - [USUARIO](#usuario)
 - [ENTRENAMIENTO](#entrenamiento)
@@ -54,6 +55,46 @@ Content-Type: application/json
 
 **Respuestas de error:**
 - `401 Unauthorized` — Correo o contraseña incorrectos
+- `500 Internal Server Error` — Error de base de datos o codificación JWT
+
+---
+
+## Registro
+
+### Crear un nuevo usuario y obtener un JWT
+
+```
+POST /register
+Content-Type: application/json
+
+{
+  "nombre": "Juan",
+  "apellido": "Pérez",
+  "correo": "juan@example.com",
+  "contrasena": "secreto123",
+  "telefono": null,
+  "edad": null,
+  "peso": null,
+  "estatura": null,
+  "pais": null,
+  "ciudad": null,
+  "direccion": null,
+  "lateralidad": null,
+  "nivel": null
+}
+```
+
+**Respuesta de éxito (200):**
+```json
+{
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "id_usuario": 42,
+  "nombre": "Juan",
+  "correo": "juan@example.com"
+}
+```
+
+**Respuestas de error:**
 - `500 Internal Server Error` — Error de base de datos o codificación JWT
 
 ---
