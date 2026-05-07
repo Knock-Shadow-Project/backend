@@ -29,12 +29,10 @@ class PunchCNN(nn.Module):
             nn.BatchNorm1d(32),
             nn.ReLU(),
             nn.MaxPool1d(2),
-
             nn.Conv1d(32, 64, kernel_size=5, padding=2),
             nn.BatchNorm1d(64),
             nn.ReLU(),
             nn.MaxPool1d(2),
-
             nn.Conv1d(64, 128, kernel_size=3, padding=1),
             nn.ReLU(),
         )
@@ -59,7 +57,9 @@ def normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     return (X - mean) / std, mean, std
 
 
-def augment(X: np.ndarray, y: np.ndarray, factor: int = 2) -> tuple[np.ndarray, np.ndarray]:
+def augment(
+    X: np.ndarray, y: np.ndarray, factor: int = 2
+) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(42)
     parts_X, parts_y = [X], [y]
     for _ in range(factor):
@@ -121,8 +121,13 @@ def plot_confusion_matrix(y_true, y_pred, class_names, out_path: str) -> None:
     size = max(6, len(class_names))
     fig, ax = plt.subplots(figsize=(size, size - 1))
     sns.heatmap(
-        cm, annot=True, fmt="d", cmap="Blues",
-        xticklabels=class_names, yticklabels=class_names, ax=ax,
+        cm,
+        annot=True,
+        fmt="d",
+        cmap="Blues",
+        xticklabels=class_names,
+        yticklabels=class_names,
+        ax=ax,
     )
     ax.set_xlabel("Predicho")
     ax.set_ylabel("Real")
@@ -138,7 +143,7 @@ def main() -> None:
     print(f"Usando dispositivo: {DEVICE}\n")
 
     # ---- Load ----
-    X, y_str = load_dataset(DEFAULT_DATASET)
+    X, y_str, _ids = load_dataset(DEFAULT_DATASET)
 
     if len(y_str) == 0:
         print("ERROR: el dataset está vacío. Graba muestras con la app primero.")
@@ -169,7 +174,11 @@ def main() -> None:
 
     # ---- Train/val split ----
     X_train, X_val, y_train, y_val = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y,
+        X,
+        y,
+        test_size=0.2,
+        random_state=42,
+        stratify=y,
     )
 
     # ---- Augmentation on train only ----
@@ -198,13 +207,16 @@ def main() -> None:
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", factor=0.5, patience=5,
+        optimizer,
+        mode="min",
+        factor=0.5,
+        patience=5,
     )
 
     # ---- Training loop with early stopping ----
     best_val_acc = 0.0
     patience_counter = 0
-    patience = 12
+    patience = 30
     best_state = None
 
     train_accs, val_accs, train_losses, val_losses = [], [], [], []
@@ -221,8 +233,8 @@ def main() -> None:
 
         print(
             f"Epoch {epoch:3d}/80 | "
-            f"loss {tr_loss:.4f} acc {tr_acc*100:.1f}% | "
-            f"val_loss {vl_loss:.4f} val_acc {vl_acc*100:.1f}%"
+            f"loss {tr_loss:.4f} acc {tr_acc * 100:.1f}% | "
+            f"val_loss {vl_loss:.4f} val_acc {vl_acc * 100:.1f}%"
         )
 
         if vl_acc > best_val_acc:
@@ -274,10 +286,19 @@ def main() -> None:
     print(f"Normalización en    {NORM_MEAN_PATH} / {NORM_STD_PATH}")
 
     # ---- Plots ----
-    plot_history(train_accs, val_accs, train_losses, val_losses,
-                 os.path.join(MODEL_DIR, "training_history.png"))
-    plot_confusion_matrix(y_val_str, y_pred_str, class_names,
-                          os.path.join(MODEL_DIR, "confusion_matrix.png"))
+    plot_history(
+        train_accs,
+        val_accs,
+        train_losses,
+        val_losses,
+        os.path.join(MODEL_DIR, "training_history.png"),
+    )
+    plot_confusion_matrix(
+        y_val_str,
+        y_pred_str,
+        class_names,
+        os.path.join(MODEL_DIR, "confusion_matrix.png"),
+    )
 
 
 if __name__ == "__main__":
