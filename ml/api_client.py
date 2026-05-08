@@ -1,6 +1,7 @@
 """Cliente para interactuar con la API de KnockShadow."""
 
 import asyncio
+import datetime
 import json
 import os
 
@@ -18,16 +19,16 @@ class ApiClient:
         self,
         base_url: str = API_BASE_URL,
         ws_url: str = WS_URL,
-        correo: str = "",
-        contrasena: str = "",
+        email: str = "",
+        password: str = "",
     ):
         self.base_url = base_url.rstrip("/")
         self.ws_url = ws_url
         self.ws = None
         self.token: str | None = None
-        self.golpe_map = {}  # (nombre, extremidad, posicion) -> id_golpe
-        self._correo = correo
-        self._contrasena = contrasena
+        self.punch_map = {}  # (name, limb, position) -> punch_id
+        self._email = email
+        self._password = password
 
     def _headers(self) -> dict:
         h = {"Content-Type": "application/json"}
@@ -35,16 +36,16 @@ class ApiClient:
             h["Authorization"] = f"Bearer {self.token}"
         return h
 
-    def login(self, correo: str | None = None, contrasena: str | None = None) -> dict:
+    def login(self, email: str | None = None, password: str | None = None) -> dict:
         """Autentica y almacena el token JWT."""
-        c = correo or self._correo
-        p = contrasena or self._contrasena
+        c = email or self._email
+        p = password or self._password
         if not c or not p:
-            raise ValueError("Se requiere correo y contrasena para login")
+            raise ValueError("Se requiere email y password para login")
 
         resp = requests.post(
             f"{self.base_url}/login",
-            json={"correo": c, "contrasena": p},
+            json={"email": c, "password": p},
             timeout=10,
         )
         resp.raise_for_status()
@@ -52,78 +53,78 @@ class ApiClient:
         self.token = data["token"]
         return data
 
-    def fetch_golpes(self) -> dict:
-        """Descarga la tabla GOLPE y construye un mapa de búsqueda."""
+    def fetch_punches(self) -> dict:
+        """Descarga la tabla PUNCH y construye un mapa de búsqueda."""
         resp = requests.get(
-            f"{self.base_url}/golpes",
+            f"{self.base_url}/punches",
             headers=self._headers(),
             timeout=10,
         )
         resp.raise_for_status()
-        golpes = resp.json()
-        self.golpe_map = {}
-        for g in golpes:
+        punches = resp.json()
+        self.punch_map = {}
+        for p in punches:
             key = (
-                g["nombre"].lower(),
-                (g["extremidad"] or "").lower(),
-                (g["posicion"] or "").lower(),
+                p["name"].lower(),
+                (p["limb"] or "").lower(),
+                (p["position"] or "").lower(),
             )
-            self.golpe_map[key] = g["id_golpe"]
-        return self.golpe_map
+            self.punch_map[key] = p["punch_id"]
+        return self.punch_map
 
     @staticmethod
     def _parse_label(label: str) -> tuple[str, str, str]:
-        """Convierte etiqueta ML en (nombre, extremidad, posicion)."""
+        """Convierte etiqueta ML en (name, limb, position)."""
         parts = label.lower().split("_")
         if len(parts) < 2:
             return label.capitalize(), "Derecha", "Cabeza"
 
         punch_type = parts[0]
         if punch_type == "jab":
-            nombre = "Jab"
+            name = "Jab"
         elif punch_type == "cross":
-            nombre = "Cross"
+            name = "Cross"
         elif punch_type == "hook":
-            nombre = "Gancho"
+            name = "Gancho"
         elif punch_type == "uppercut":
-            nombre = "Upper"
+            name = "Upper"
         else:
-            nombre = punch_type.capitalize()
+            name = punch_type.capitalize()
 
         pos_str = "_".join(parts[1:])
         if "izquierda" in pos_str:
-            extremidad = "Izquierda"
+            limb = "Izquierda"
         elif "derecha" in pos_str:
-            extremidad = "Derecha"
+            limb = "Derecha"
         else:
-            extremidad = "Derecha"
+            limb = "Derecha"
 
         if "arriba" in pos_str:
-            posicion = "Cabeza"
+            position = "Cabeza"
         else:
-            posicion = "Cuerpo"
+            position = "Cuerpo"
 
-        return nombre, extremidad, posicion
+        return name, limb, position
 
-    def map_prediction_to_golpe(self, pred_label: str) -> int | None:
-        """Devuelve el id_golpe para una etiqueta ML, o None."""
-        nombre, extremidad, posicion = self._parse_label(pred_label)
-        key = (nombre.lower(), extremidad.lower(), posicion.lower())
-        return self.golpe_map.get(key)
+    def map_prediction_to_punch(self, pred_label: str) -> int | None:
+        """Devuelve el punch_id para una etiqueta ML, o None."""
+        name, limb, position = self._parse_label(pred_label)
+        key = (name.lower(), limb.lower(), position.lower())
+        return self.punch_map.get(key)
 
-    def create_entrenamiento(
-        self, id_usuario: int = 1, tipo: str = "Estandar"
+    def create_training(
+        self, user_id: int = 1, training_type: str = "Estandar"
     ) -> dict:
         """Crea un nuevo entrenamiento."""
         payload = {
-            "hora_inicio": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "hora_fin": None,
-            "tipo": tipo,
-            "calorias": None,
-            "id_usuario": id_usuario,
+            "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            "end_time": None,
+            "training_type": training_type,
+            "calories": None,
+            "user_id": user_id,
         }
         resp = requests.post(
-            f"{self.base_url}/entrenamientos",
+            f"{self.base_url}/trainings",
             json=payload,
             headers=self._headers(),
             timeout=10,
@@ -131,13 +132,13 @@ class ApiClient:
         resp.raise_for_status()
         return resp.json()
 
-    def finish_entrenamiento(self, id_entrenamiento: int) -> dict:
-        """Marca la hora_fin de un entrenamiento."""
+    def finish_training(self, training_id: int) -> dict:
+        """Marca la end_time de un entrenamiento."""
         payload = {
-            "hora_fin": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            "end_time": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
         resp = requests.put(
-            f"{self.base_url}/entrenamientos/{id_entrenamiento}",
+            f"{self.base_url}/trainings/{training_id}",
             json=payload,
             headers=self._headers(),
             timeout=10,
@@ -145,17 +146,17 @@ class ApiClient:
         resp.raise_for_status()
         return resp.json()
 
-    def create_historial(
-        self, id_entrenamiento: int, id_golpe: int, potencia: float | None = None
+    def create_history(
+        self, training_id: int, punch_id: int, power: float | None = None
     ) -> dict:
         """Registra un golpe en el historial."""
         payload = {
-            "id_entrenamiento": id_entrenamiento,
-            "id_golpe": id_golpe,
-            "potencia": potencia,
+            "training_id": training_id,
+            "punch_id": punch_id,
+            "power": power,
         }
         resp = requests.post(
-            f"{self.base_url}/historial",
+            f"{self.base_url}/history",
             json=payload,
             headers=self._headers(),
             timeout=10,
@@ -184,7 +185,7 @@ class ApiClient:
     def __enter__(self):
         if not self.token:
             self.login()
-        self.fetch_golpes()
+        self.fetch_punches()
         return self
 
     def __exit__(self, *args):

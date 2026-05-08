@@ -22,10 +22,10 @@ Para obtener un token, usa el endpoint de login. El token expira tras **24 horas
 - [Login](#login)
 - [Registro](#registro)
 - [WebSocket](#websocket)
-- [Usuarios](#usuario)
-- [Entrenamientos](#entrenamiento)
-- [Golpes](#golpe)
-- [Hsitorial](#historial)
+- [Users](#users)
+- [Trainings](#trainings)
+- [Punches](#punches)
+- [History](#history)
 
 ---
 
@@ -190,9 +190,9 @@ Igual que `Historial` más:
 
 ---
 
-## Usuarios
+## Users
 
-Todos los endpoints de `USUARIO` requieren autenticación Bearer.
+Todos los endpoints de `USER` requieren autenticación Bearer.
 
 ### Listar todos los usuarios
 ```
@@ -248,9 +248,9 @@ Authorization: Bearer <token>
 
 ---
 
-## ENTRENAMIENTO
+## Trainings
 
-Todos los endpoints de `ENTRENAMIENTO` requieren autenticación Bearer.
+Todos los endpoints de `TRAINING` requieren autenticación Bearer.
 
 ### Listar todos los entrenamientos
 ```
@@ -305,9 +305,9 @@ Authorization: Bearer <token>
 
 ---
 
-## Golpe
+## Punches
 
-Todos los endpoints de `GOLPE` requieren autenticación Bearer.
+Todos los endpoints de `PUNCH` requieren autenticación Bearer.
 
 ### List all punches
 ```
@@ -353,9 +353,9 @@ Authorization: Bearer <token>
 
 ---
 
-## Historial
+## History
 
-Todos los endpoints de `HISTORIAL` requieren autenticación Bearer.
+Todos los endpoints de `HISTORY` requieren autenticación Bearer.
 
 ### Listar todo el historial (con detalles del golpe)
 ```
