@@ -1,4 +1,4 @@
-version: "3.8"
+name: knockshadow-cloud
 
 services:
   db:
@@ -29,6 +29,7 @@ services:
     environment:
       DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
       PORT: "3000"
+      JWT_SECRET: ${JWT_SECRET:-knockshadow_default_secret_change_me}
     ports:
       - "3000:3000"
     depends_on:

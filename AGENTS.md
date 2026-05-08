@@ -7,14 +7,22 @@ backend/
 ├── Cargo.toml              # Workspace root
 ├── crates/
 │   ├── api-db/             # REST API + WebSocket server (Axum + SQLx + PostgreSQL)
-│   └── bt-reader/          # Bluetooth LE streamer (btleplug + tokio-postgres)
+│   ├── bt-reader/          # Bluetooth LE streamer (btleplug + tokio-postgres) — modo cloud
+│   └── pi-service/         # Servicio offline-first para Raspberry Pi (BLE + SQLite + API local + mDNS)
 ├── docs/
 │   ├── API.md              # API documentation (English)
 │   ├── Bluetooth Streamer.md
 │   └── Red Neuronal.md
 ├── ml/                     # Python ML pipeline (PyTorch)
+│   ├── main.py             # Inferencia modo cloud (lee PostgreSQL)
+│   └── pi_inference.py     # Inferencia modo Raspberry (lee SQLite local)
 ├── grafana/                # Dashboard provisioning
-├── docker-compose.yaml
+├── docker-compose.yaml     # Stack cloud (DB + API + BLE + ML)
+├── docker-compose.pi.yaml  # Stack Raspberry Pi offline-first
+├── Dockerfile.api-db
+├── Dockerfile.ble-stream
+├── Dockerfile.pi-service
+├── Dockerfile.pi-inference
 └── yaak_collection.json    # Postman-like collection for API testing
 ```
 
@@ -36,15 +44,129 @@ backend/
 - All other endpoints require `Authorization: Bearer <jwt>`
 - JWT secret comes from `JWT_SECRET` env var (defaults to insecure default — change in production)
 
-## Build & Run
+## Build & Run (local)
 
 ```bash
 cargo check --workspace    # Verify compilation
-cargo run -p api-db        # Run API server
-cargo run -p ble-stream    # Run BLE streamer
+cargo run -p api-db        # Run remote API server
+cargo run -p ble-stream    # Run BLE streamer (cloud mode)
+cargo run -p pi-service    # Run Raspberry Pi offline-first service
 ```
 
+## Docker
+
+### Cloud stack (`docker-compose.yaml`)
+
+Levanta PostgreSQL + API REST + BLE streamer + ML inference + Streamlit app.
+
+```bash
+docker compose -f docker-compose.yaml up --build
+```
+
+Servicios expuestos:
+- API: `http://localhost:3000`
+- Streamlit: `http://localhost:8501`
+- PostgreSQL: `localhost:5432`
+
+### Raspberry Pi stack (`docker-compose.pi.yaml`)
+
+Levanta `pi-service` + `pi-inference` con SQLite local. **No requiere PostgreSQL ni conexión a internet**.
+
+```bash
+# En la Raspberry Pi 4 (ARM64)
+export DEVICE_MAC_1=DF:65:81:D0:D7:E5
+export DEVICE_MAC_2=CB:01:10:3E:0D:61
+export API_BASE_URL=http://tu-servidor-cloud:3000   # opcional, para sync
+docker compose -f docker-compose.pi.yaml up --build
+```
+
+Servicios:
+- `pi-service`: API local en `http://<ip-de-la-pi>:8080`, mDNS `_knockshadow._tcp.local.`
+- `pi-inference`: lee SQLite, clasifica golpes y escribe resultados.
+- Volumen compartido `pi-data` para SQLite persistente (`/data/pi_data.db`).
+
+**Notas de despliegue en Raspberry Pi:**
+- `pi-service` usa `privileged: true` y `network_mode: host` para BLE y mDNS.
+- Asegúrate de que `bluetoothd` está activo en el host antes de levantar el contenedor.
+- Para compilar imágenes ARM64 desde x86_64, usa Docker Buildx:
+  ```bash
+  docker buildx build --platform linux/arm64 -f Dockerfile.pi-service -t knockshadow/pi-service:latest .
+  ```
+
+## Architecture — Raspberry Pi (Offline-First)
+
+```
+┌─────────────┐   BLE   ┌──────────────┐   SQLite   ┌─────────────────┐
+│  Sensores   │ ───────►│  pi-service  │◄──────────►│  pi_inference   │
+│   (2x)      │         │   (Rust)     │            │   (Python/CNN)  │
+└─────────────┘         └──────────────┘            └─────────────────┘
+                               │                           │
+                               │ HTTP/WS                   │ write punches
+                               ▼                           ▼
+                        ┌─────────────┐            ┌─────────────┐
+                        │  App Movil  │            │  SQLite DB  │
+                        │ (mDNS desc) │            │  (offline)  │
+                        └─────────────┘            └─────────────┘
+                               │                           │
+                               │ sync (si hay internet)    │
+                               ▼                           ▼
+                        ┌───────────────────────────────────────┐
+                        │           api-db remota               │
+                        │      (PostgreSQL + API REST)          │
+                        └───────────────────────────────────────┘
+```
+
+### pi-service (Rust)
+
+Servicio que corre en la Raspberry Pi 4. Funciona **sin conexión a internet**.
+
+- **BLE**: conecta 1 o 2 sensores y guarda muestras en SQLite.
+- **API local**: Axum en el puerto configurado (default `8080`).
+  - `GET /` — healthcheck.
+  - `GET /training/active` — devuelve el entrenamiento activo (o `active: false`).
+  - `POST /training/start` — crea entrenamiento local. Body: `{ "user_id": i32, "jwt": "optional", "training_type": "Standard" }`.
+  - `POST /training/stop` — finaliza entrenamiento local. Body: `{ "local_training_id": i64 }`.
+  - `GET /trainings/:id/punches` — lista golpes detectados de un entrenamiento.
+  - `WS /live` — stream en tiempo real de golpes detectados (JSON).
+- **mDNS**: anuncia `_knockshadow._tcp.local.` para que la app móvil descubra la Raspberry automáticamente en la red WiFi.
+- **Sync remoto**: si `API_BASE_URL` está configurado, sincroniza la cola `sync_queue` (entrenamientos y futuros datos) con la API remota cada 30 segundos.
+
+### pi_inference.py (Python)
+
+Script de inferencia CNN adaptado para correr **offline** en la Raspberry.
+
+- Lee muestras BLE desde la **SQLite local** (en lugar de PostgreSQL).
+- Detecta golpes, clasifica y calcula **potencia (G)**.
+- Guarda resultados en la tabla `detected_punches` con `user_id` y `local_training_id`.
+- Si no se pasa `--training-id`, **autodescubre** el entrenamiento activo consultando `local_trainings`.
+- Usa el mismo modelo PyTorch entrenado (`model/punch_classifier.pt`).
+
+#### Ejecución típica en la Raspberry
+
+Terminal 1:
+```bash
+export DB_PATH=pi_data.db
+export DEVICE_MAC_1=DF:65:81:D0:D7:E5
+export DEVICE_MAC_2=CB:01:10:3E:0D:61
+cargo run -p pi-service
+```
+
+Terminal 2:
+```bash
+export DB_PATH=pi_data.db
+python ml/pi_inference.py --user-id 1
+```
+
+La app móvil:
+1. Descubre `knockshadow-pi.local.` vía mDNS.
+2. Se conecta a `http://<ip>:8080`.
+3. Llama `POST /training/start` para iniciar sesión.
+4. Se conecta a `WS /live` para ver golpes en tiempo real.
+5. Llama `POST /training/stop` al finalizar.
+
 ## Environment Variables
+
+### api-db (remoto)
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -52,9 +174,31 @@ cargo run -p ble-stream    # Run BLE streamer
 | `PORT` | `3000` | HTTP server port |
 | `JWT_SECRET` | `knockshadow_default_secret_change_me` | JWT signing secret |
 
+### pi-service (Raspberry Pi)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_PATH` | `pi_data.db` | Ruta a la SQLite local |
+| `PORT` | `8080` | Puerto del API local |
+| `DEVICE_MAC_1` | — | MAC del sensor izquierdo |
+| `DEVICE_MAC_2` | — | MAC del sensor derecho |
+| `API_BASE_URL` | — | URL base de la API remota (opcional, ej: `http://api.knockshadow.com:3000`) |
+| `MDNS_HOSTNAME` | `knockshadow-pi` | Nombre mDNS del servicio |
+
+### pi_inference.py (Raspberry Pi)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DB_PATH` | `pi_data.db` | Misma SQLite que pi-service |
+| `SENSOR_MAC_1` | `DF:65:81:D0:D7:E5` | MAC sensor izquierdo |
+| `SENSOR_MAC_2` | `CB:01:10:3E:0D:61` | MAC sensor derecho |
+
 ## Dependencies of Note
 
 - `bcrypt` — password hashing
 - `jsonwebtoken` — JWT creation/validation
 - `axum` — HTTP/WebSocket framework
 - `sqlx` — async SQL with compile-time checks
+- `btleplug` — BLE abstraction
+- `mdns-sd` — mDNS service discovery
+- `reqwest` — HTTP client for remote sync

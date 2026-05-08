@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 FROM rust:1.94-bookworm AS builder
 
-# Install build dependencies for btleplug (BlueZ / D-Bus)
+# Install build dependencies for btleplug (BlueZ / D-Bus) + reqwest (openssl)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libdbus-1-dev libbluetooth-dev pkg-config \
+    libdbus-1-dev libbluetooth-dev libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -20,27 +20,29 @@ RUN mkdir -p crates/bt-reader/src && echo 'fn main(){}' > crates/bt-reader/src/m
 RUN mkdir -p crates/pi-service/src && echo 'fn main(){}' > crates/pi-service/src/main.rs
 
 # Build dependencies (this layer is cached if manifests don't change)
-RUN cargo build -p ble-stream --release || true
+RUN cargo build -p pi-service --release || true
 
 # Copy real sources
-COPY crates/bt-reader/src ./crates/bt-reader/src
+COPY crates/pi-service/src ./crates/pi-service/src
 
 # Build the real binary
-RUN cargo build -p ble-stream --release
+RUN cargo build -p pi-service --release
 
 # Runtime stage
 FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libdbus-1-3 libbluetooth3 bluez \
+    libdbus-1-3 libbluetooth3 bluez libssl3 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/ble-stream /usr/local/bin/ble-stream
+COPY --from=builder /app/target/release/pi-service /usr/local/bin/pi-service
 
+EXPOSE 8080
+
+ENV PORT=8080
+ENV DB_PATH=/data/pi_data.db
 ENV RUST_LOG=info
-ENV DEVICE_MAC=DF:65:81:D0:D7:E5
-ENV DATABASE_URL=postgres://knockshadow:knockshadow@db:5432/knockshadow
 
 # Note: Bluetooth inside Docker requires privileged mode and D-Bus socket mount.
-# See docker-compose.yml for the required configuration.
-CMD ["ble-stream"]
+# See docker-compose.pi.yml for the required configuration.
+CMD ["pi-service"]

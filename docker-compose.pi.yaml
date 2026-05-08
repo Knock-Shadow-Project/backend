@@ -1,0 +1,50 @@
+name: knockshadow-pi
+
+services:
+  pi-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.pi-service
+    container_name: knockshadow-pi-service
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/pi_data.db
+      PORT: "8080"
+      DEVICE_MAC_1: ${DEVICE_MAC_1:-DF:65:81:D0:D7:E5}
+      DEVICE_MAC_2: ${DEVICE_MAC_2:-CB:01:10:3E:0D:61}
+      API_BASE_URL: ${API_BASE_URL:-}
+      MDNS_HOSTNAME: ${MDNS_HOSTNAME:-knockshadow-pi}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - pi-data:/data
+      - /var/run/dbus:/var/run/dbus:ro
+      - /dev/bus/usb:/dev/bus/usb
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+    # Host networking is recommended on the Raspberry Pi so that mDNS
+    # broadcasts are visible on the local WiFi network.
+    network_mode: host
+
+  pi-inference:
+    build:
+      context: .
+      dockerfile: Dockerfile.pi-inference
+    container_name: knockshadow-pi-inference
+    restart: unless-stopped
+    environment:
+      DB_PATH: /data/pi_data.db
+      SENSOR_MAC_1: ${SENSOR_MAC_1:-DF:65:81:D0:D7:E5}
+      SENSOR_MAC_2: ${SENSOR_MAC_2:-CB:01:10:3E:0D:61}
+    volumes:
+      - pi-data:/data
+    command:
+      - python
+      - pi_inference.py
+      - --user-id
+      - "${USER_ID:-1}"
+    # On the Pi the inference container does NOT need Bluetooth privileges;
+    # it only needs access to the shared SQLite volume.
+
+volumes:
+  pi-data:

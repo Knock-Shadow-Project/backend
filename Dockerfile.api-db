@@ -12,10 +12,12 @@ WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates/api-db/Cargo.toml ./crates/api-db/
 COPY crates/bt-reader/Cargo.toml ./crates/bt-reader/
+COPY crates/pi-service/Cargo.toml ./crates/pi-service/
 
 # Create dummy sources to cache dependencies
 RUN mkdir -p crates/api-db/src && echo 'fn main(){}' > crates/api-db/src/main.rs
 RUN mkdir -p crates/bt-reader/src && echo 'fn main(){}' > crates/bt-reader/src/main.rs
+RUN mkdir -p crates/pi-service/src && echo 'fn main(){}' > crates/pi-service/src/main.rs
 
 # Build dependencies (this layer is cached if manifests don't change)
 RUN cargo build -p api-db --release || true

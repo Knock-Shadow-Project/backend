@@ -5,17 +5,19 @@ WORKDIR /app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev \
+    gcc g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies
-COPY requirements.txt .
+COPY ml/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code and model
-COPY pipeline.py train.py api_client.py main.py app.py pi_inference.py ./
-COPY model/ ./model/
-COPY data/ ./data/
+COPY ml/pipeline.py ml/train.py ml/pi_inference.py ./
+COPY ml/model/ ./model/
+
+ENV DB_PATH=/data/pi_data.db
+ENV PYTHONUNBUFFERED=1
 
 # Default command (overridden in docker-compose)
-CMD ["python", "main.py"]
+CMD ["python", "pi_inference.py", "--user-id", "1"]
