@@ -1,5 +1,9 @@
 # Bluetooth Streamer — Documentación
 
+> **Estado:** Legacy. Este servicio fue diseñado para una arquitectura puramente cloud donde los sensores BLE se conectaban directamente al servidor. En la arquitectura actual, la captura BLE ocurre en la **Raspberry Pi** mediante [`pi-service`](Pi%20Service.md), que guarda las muestras en SQLite local y sincroniza con el cloud cuando hay conexión.
+>
+> `ble-stream` se mantiene en el repositorio por compatibilidad histórica pero **no forma parte del stack de producción** con la arquitectura offline-first.
+
 El **Bluetooth Streamer** (`ble-stream`) es el servicio encargado de recibir telemetría en tiempo real desde el saco inteligente KnockShadow mediante **Bluetooth Low Energy (BLE)** y persistirla en **PostgreSQL/TimescaleDB**.
 
 ---

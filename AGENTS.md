@@ -6,21 +6,24 @@
 backend/
 ├── Cargo.toml              # Workspace root
 ├── crates/
-│   ├── api-db/             # REST API + WebSocket server (Axum + SQLx + PostgreSQL)
-│   ├── bt-reader/          # Bluetooth LE streamer (btleplug + tokio-postgres) — modo cloud
+│   ├── api-db/             # REST API + WebSocket server (Axum + SQLx + PostgreSQL) — cloud
+│   ├── bt-reader/          # Bluetooth LE streamer (btleplug + tokio-postgres) — legacy
 │   └── pi-service/         # Servicio offline-first para Raspberry Pi (BLE + SQLite + API local + mDNS)
 ├── docs/
 │   ├── API.md              # API documentation (English)
 │   ├── Bluetooth Streamer.md
+│   ├── Deployment.md       # Guía de despliegue cloud vs Raspberry Pi
+│   ├── Pi Inference.md     # Documentación de la CNN offline
+│   ├── Pi Service.md       # Documentación del servicio en Raspberry Pi
 │   └── Red Neuronal.md
 ├── ml/                     # Python ML pipeline (PyTorch)
-│   ├── main.py             # Inferencia modo cloud (lee PostgreSQL)
+│   ├── main.py             # Inferencia modo cloud (lee PostgreSQL) — legacy
 │   └── pi_inference.py     # Inferencia modo Raspberry (lee SQLite local)
 ├── grafana/                # Dashboard provisioning
-├── docker-compose.yaml     # Stack cloud (DB + API + BLE + ML)
+├── docker-compose.yaml     # Stack cloud (DB + API + Streamlit)
 ├── docker-compose.pi.yaml  # Stack Raspberry Pi offline-first
 ├── Dockerfile.api-db
-├── Dockerfile.ble-stream
+├── Dockerfile.ble-stream   # Legacy
 ├── Dockerfile.pi-service
 ├── Dockerfile.pi-inference
 └── yaak_collection.json    # Postman-like collection for API testing
@@ -49,7 +52,6 @@ backend/
 ```bash
 cargo check --workspace    # Verify compilation
 cargo run -p api-db        # Run remote API server
-cargo run -p ble-stream    # Run BLE streamer (cloud mode)
 cargo run -p pi-service    # Run Raspberry Pi offline-first service
 ```
 
@@ -57,7 +59,9 @@ cargo run -p pi-service    # Run Raspberry Pi offline-first service
 
 ### Cloud stack (`docker-compose.yaml`)
 
-Levanta PostgreSQL + API REST + BLE streamer + ML inference + Streamlit app.
+Levanta PostgreSQL + API REST + Streamlit app (para etiquetar datos de entrenamiento).
+
+> **Nota:** Los sensores BLE siempre se emparejan con la Raspberry Pi vía Bluetooth Low Energy. El cloud solo aloja la API central y la base de datos donde se sincronizan los datos.
 
 ```bash
 docker compose -f docker-compose.yaml up --build
