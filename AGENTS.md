@@ -168,6 +168,47 @@ La app móvil:
 4. Se conecta a `WS /live` para ver golpes en tiempo real.
 5. Llama `POST /training/stop` al finalizar.
 
+## Entrenamiento de la red neuronal
+
+### Opción A: Etiquetado en tiempo real en la Raspberry Pi (offline)
+
+Desde la versión actual, la app Streamlit (`ml-app`) también puede correr directamente en la Raspberry Pi leyendo la **SQLite local** (`pi_data.db`). Esto permite etiquetar golpes en tiempo real **sin necesidad de PostgreSQL ni internet**.
+
+1. **Levanta el stack completo de la Pi** (incluye `ml-app`):
+   ```bash
+   docker compose -f docker-compose.pi.yaml up --build -d
+   ```
+2. **Abre la app de etiquetado** desde cualquier dispositivo en la misma red:
+   ```
+   http://<ip-de-la-pi>:8501
+   ```
+3. **Graba y etiqueta** — pulsa *Iniciar grabación*, pega los golpes, detén, y asigna tipo/posición a cada pico detectado.
+4. **Entrena en la Pi** (o copia `ml/data/dataset.npz` a tu PC para entrenar más rápido):
+   ```bash
+   docker exec knockshadow-ml-app python train.py
+   ```
+   El modelo se guardará en `ml/model/punch_classifier.pt` dentro del volumen compartido.
+5. **Reinicia `pi-inference`** para que use el nuevo modelo:
+   ```bash
+   docker compose -f docker-compose.pi.yaml restart pi-inference
+   ```
+
+### Opción B: Flujo cloud (PC más potente)
+
+Si prefieres entrenar en tu PC por rendimiento:
+
+1. **Capturar datos en la Raspberry** — `pi-service` guarda muestras BLE en `pi_data.db`.
+2. **Exportar al cloud** — usa el script `ml/sync_ble_to_cloud.py` para volcar `ble_samples` desde SQLite a PostgreSQL:
+   ```bash
+   # Desde tu PC (con la base SQLite copiada de la Pi)
+   python ml/sync_ble_to_cloud.py \
+       --sqlite pi_data.db \
+       --pg-url postgres://knockshadow:knockshadow@<host-cloud>:5432/knockshadow
+   ```
+3. **Etiquetar** — levanta el stack cloud (`docker-compose.yaml`) y abre `http://localhost:8501` para usar la app Streamlit.
+4. **Entrenar** — ejecuta `python ml/train.py`. Genera `model/punch_classifier.pt`.
+5. **Desplegar en la Pi** — copia la carpeta `ml/model/` a la Raspberry y reconstruye `docker-compose.pi.yaml`.
+
 ## Environment Variables
 
 ### api-db (remoto)

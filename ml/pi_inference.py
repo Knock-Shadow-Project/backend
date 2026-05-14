@@ -18,7 +18,7 @@ from pipeline import (
     detect_hits,
     merge_sensors,
 )
-from train import PunchCNN
+from model_def import PunchCNN
 
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
 MODEL_PATH = os.path.join(MODEL_DIR, "punch_classifier.pt")
@@ -35,6 +35,17 @@ PROCESSED_TTL = 10.0
 DB_PATH = os.getenv("DB_PATH", "pi_data.db")
 SENSOR_MAC_1 = os.getenv("SENSOR_MAC_1", "DF:65:81:D0:D7:E5")
 SENSOR_MAC_2 = os.getenv("SENSOR_MAC_2", "CB:01:10:3E:0D:61")
+
+# Shared with pi-service (Rust) via Docker volume. pi-service initializes the
+# file with journal_mode=WAL; here we only need a per-connection busy_timeout
+# so concurrent writes don't hit SQLITE_BUSY immediately.
+SQLITE_TIMEOUT = 5.0
+
+
+def _connect_sqlite() -> sqlite3.Connection:
+    conn = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def load_model():
@@ -85,7 +96,7 @@ def predict_windows(model, windows, class_names, mean, std):
 
 
 def load_data_sqlite(start_time, end_time):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect_sqlite()
     query = """
     SELECT received_at, device_mac, x, y, z
     FROM ble_samples
@@ -102,7 +113,7 @@ def load_data_sqlite(start_time, end_time):
 
 
 def save_detected_punch(user_id, local_training_id, class_name, limb, position, power, prob):
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect_sqlite()
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -118,7 +129,7 @@ def save_detected_punch(user_id, local_training_id, class_name, limb, position, 
 
 def get_active_training():
     """Busca el entrenamiento activo (sin end_time) mas reciente en SQLite."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = _connect_sqlite()
     cursor = conn.cursor()
     cursor.execute(
         """

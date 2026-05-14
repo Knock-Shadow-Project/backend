@@ -1,28 +1,50 @@
-use mdns_sd::ServiceDaemon;
-use tracing::info;
+use std::process::{Child, Command, Stdio};
+use tracing::{info, warn};
 
-pub fn announce(hostname: &str, port: u16) -> Result<ServiceDaemon, Box<dyn std::error::Error>> {
-    let mdns = ServiceDaemon::new()?;
-    let service_type = "_knockshadow._tcp.local.";
-    let instance_name = format!("{}.{}", hostname, service_type);
+/// Handle to a running `avahi-publish-service` subprocess. Dropping it kills the
+/// child, which de-registers the service from the host's avahi-daemon.
+pub struct AvahiPublish {
+    child: Child,
+}
 
-    let my_addrs: Vec<std::net::IpAddr> = get_if_addrs::get_if_addrs()?
-        .into_iter()
-        .filter(|iface| !iface.is_loopback() && iface.ip().is_ipv4())
-        .map(|iface| iface.ip())
-        .collect();
+impl Drop for AvahiPublish {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
 
-    let service_info = mdns_sd::ServiceInfo::new(
-        service_type,
-        &instance_name,
-        &format!("{}.local.", hostname),
-        &my_addrs[..],
-        port,
-        &[("path", "/"), ("version", "1.0")][..],
-    )?
-    .to_owned();
+/// Publish the service through the host's avahi-daemon via DBus.
+///
+/// The container shares `/var/run/dbus` with the host, so `avahi-publish-service`
+/// talks to the system avahi instead of opening its own UDP/5353 socket. This
+/// avoids the bind conflict that silently breaks announcements when running
+/// with `network_mode: host` alongside the system avahi-daemon.
+pub fn announce(hostname: &str, port: u16) -> Result<AvahiPublish, Box<dyn std::error::Error>> {
+    let service_type = "_knockshadow._tcp";
 
-    mdns.register(service_info)?;
-    info!("mDNS service registered: {} on port {}", instance_name, port);
-    Ok(mdns)
+    let child = Command::new("avahi-publish-service")
+        .arg(hostname)
+        .arg(service_type)
+        .arg(port.to_string())
+        .arg("path=/")
+        .arg("version=1.0")
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            warn!(
+                "Failed to spawn avahi-publish-service: {}. Is avahi-utils installed in the image \
+                 and /var/run/dbus mounted?",
+                e
+            );
+            e
+        })?;
+
+    info!(
+        "mDNS announce requested via avahi: {} {} port {}",
+        hostname, service_type, port
+    );
+    Ok(AvahiPublish { child })
 }

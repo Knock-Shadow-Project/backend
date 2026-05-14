@@ -1,10 +1,26 @@
-use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
+use sqlx::{
+    Pool, Sqlite,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+};
+use std::str::FromStr;
+use std::time::Duration;
 use tracing::info;
 
 pub async fn init(db_path: &str) -> Result<Pool<Sqlite>, sqlx::Error> {
+    // WAL + busy_timeout are required: this file is shared via a Docker volume
+    // with the Python pi-inference and ml-app containers. Without WAL the
+    // default rollback-journal serializes everything; without busy_timeout the
+    // first conflicting writer sees SQLITE_BUSY immediately.
+    let opts = SqliteConnectOptions::from_str(&format!("sqlite:{}", db_path))?
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .synchronous(SqliteSynchronous::Normal)
+        .busy_timeout(Duration::from_secs(5))
+        .foreign_keys(true);
+
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
-        .connect(&format!("sqlite:{}", db_path))
+        .connect_with(opts)
         .await?;
 
     sqlx::query(

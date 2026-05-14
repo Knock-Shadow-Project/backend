@@ -17,6 +17,7 @@ from pipeline import (
     delete_last_samples,
     delete_samples_by_id,
     delete_samples_by_label,
+    get_latest_sample_per_sensor,
     get_recent_samples,
     relabel_samples_by_label,
     load_data,
@@ -24,6 +25,12 @@ from pipeline import (
     merge_sensors,
     save_dataset,
 )
+
+# Tiempos para clasificar el estado del sensor (en segundos, sobre la edad del
+# último sample). Verde si llega tráfico fresco, ámbar si va lento, rojo si
+# nada en > 10s o no hay datos en absoluto.
+SENSOR_OK_MAX_AGE_S = 2.0
+SENSOR_WARN_MAX_AGE_S = 10.0
 
 PUNCH_TYPES = ["jab", "cross", "hook", "uppercut"]
 POSITIONS = [
@@ -76,8 +83,47 @@ st.title("KnockShadow — Herramienta de Dataset")
 
 init_session()
 
+
+@st.fragment(run_every="2s")
+def render_sensor_status() -> None:
+    """Badge por sensor coloreado según la edad del último sample. Se redibuja
+    cada 2 s sin re-ejecutar el script entero, así no interrumpe la grabación."""
+    now = datetime.datetime.now(datetime.timezone.utc)
+    try:
+        latest = get_latest_sample_per_sensor()
+    except Exception as exc:
+        st.warning(f"No se pudo consultar el estado de los sensores: {exc}")
+        return
+
+    for mac, name in [(SENSOR_MAC_1, "Sensor 1"), (SENSOR_MAC_2, "Sensor 2")]:
+        last = latest.get(mac)
+        if last is None:
+            color, status = "#d62728", "sin datos"
+        else:
+            age = (now - last.to_pydatetime()).total_seconds()
+            if age < SENSOR_OK_MAX_AGE_S:
+                color, status = "#2ca02c", f"OK · {age:.1f} s"
+            elif age < SENSOR_WARN_MAX_AGE_S:
+                color, status = "#ff8c00", f"lento · {age:.1f} s"
+            else:
+                color, status = "#d62728", f"inactivo · {age:.0f} s"
+        st.markdown(
+            (
+                f'<div style="background:{color};color:#fff;padding:6px 10px;'
+                'border-radius:6px;margin:4px 0;font-weight:600;font-size:0.9rem;">'
+                f"● {name} — {status}<br>"
+                f'<span style="font-weight:400;font-size:0.75rem;opacity:0.85;">'
+                f"{mac}</span></div>"
+            ),
+            unsafe_allow_html=True,
+        )
+
+
 # ---- Sidebar ----
 with st.sidebar:
+    st.subheader("Sensores")
+    render_sensor_status()
+    st.divider()
     st.header("Dataset")
     X_ds, y_ds, ids_ds = load_dataset(DEFAULT_DATASET)
     if len(y_ds) > 0:

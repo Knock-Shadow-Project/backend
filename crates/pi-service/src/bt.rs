@@ -160,6 +160,12 @@ fn decode_data(data: &[u8]) -> Option<(Option<u16>, f32, f32, f32)> {
     let x = i16::from_le_bytes([payload[0], payload[1]]) as f32;
     let y = i16::from_le_bytes([payload[2], payload[3]]) as f32;
     let z = i16::from_le_bytes([payload[4], payload[5]]) as f32;
+    if !(-20000.0..=20000.0).contains(&z)
+        || !(-20000.0..=20000.0).contains(&x)
+        || !(-20000.0..=20000.0).contains(&y)
+    {
+        return None; // Filtrar muestras claramente invalidas
+    }
     Some((ts, x, y, z))
 }
 

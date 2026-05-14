@@ -22,7 +22,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/training/active", get(active_training))
         .route("/training/start", post(start_training))
         .route("/training/stop", post(stop_training))
-        .route("/trainings/:id/punches", get(list_punches))
+        .route("/trainings/{id}/punches", get(list_punches))
         .route("/live", get(ws_handler))
         .layer(cors)
         .with_state(state)

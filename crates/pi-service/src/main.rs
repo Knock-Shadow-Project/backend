@@ -50,7 +50,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         remote_api_url: env::var("API_BASE_URL").ok(),
     });
 
-    // mDNS discovery
+    // mDNS discovery — delegated to the host's avahi-daemon via DBus
+    // (see crates/pi-service/src/mdns.rs). The returned handle must stay
+    // bound for the lifetime of the process; dropping it kills the child
+    // and de-registers the service.
     let mdns_hostname = env::var("MDNS_HOSTNAME").unwrap_or_else(|_| "knockshadow-pi".to_string());
     let port = env::var("PORT")
         .unwrap_or_else(|_| "8080".to_string())

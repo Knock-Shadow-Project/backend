@@ -3,21 +3,27 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ \
-    && rm -rf /var/lib/apt/lists/*
+# No compilers needed: torch/numpy/scipy/pandas all ship aarch64 wheels.
+# Adding gcc here would bloat the image and was only there to fall back on
+# source builds we never want on the Pi.
 
-# Install Python dependencies
-COPY ml/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install lightweight deps first (own layer for caching).
+COPY ml/requirements_inference.txt .
+RUN pip install --no-cache-dir -r requirements_inference.txt
 
-# Copy application code and model
-COPY ml/pipeline.py ml/train.py ml/pi_inference.py ./
+# Install CPU-only torch from PyTorch's index. The default PyPI wheels for
+# linux bundle nvidia-cublas / nvidia-cuda-runtime / nvidia-cudnn, blowing the
+# image up by ~2 GB; the cpu index ships a single ~200 MB wheel with no CUDA.
+RUN pip install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cpu \
+    "torch>=2.9"
+
+# Copy only what the inference path imports. train.py is intentionally NOT
+# copied — it pulls matplotlib / seaborn / scikit-learn that the Pi never uses.
+COPY ml/pipeline.py ml/model_def.py ml/pi_inference.py ./
 COPY ml/model/ ./model/
 
 ENV DB_PATH=/data/pi_data.db
 ENV PYTHONUNBUFFERED=1
 
-# Default command (overridden in docker-compose)
 CMD ["python", "pi_inference.py", "--user-id", "1"]
