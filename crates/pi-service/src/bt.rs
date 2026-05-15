@@ -160,12 +160,28 @@ fn decode_data(data: &[u8]) -> Option<(Option<u16>, f32, f32, f32)> {
     let x = i16::from_le_bytes([payload[0], payload[1]]) as f32;
     let y = i16::from_le_bytes([payload[2], payload[3]]) as f32;
     let z = i16::from_le_bytes([payload[4], payload[5]]) as f32;
-    if !(-20000.0..=20000.0).contains(&z)
-        || !(-20000.0..=20000.0).contains(&x)
-        || !(-20000.0..=20000.0).contains(&y)
+
+    // Two failure modes observed on these BLE sensors:
+    //   1. i16 saturation: axis pinned to ±32768 (firmware clip on bad I²C).
+    //   2. Framing glitches: a plausible-looking value in one axis combined
+    //      with garbage in the others — e.g. (640, 3905, -32768). Each axis
+    //      passes a simple per-axis range check, but the magnitude is
+    //      physically impossible (~33 G total) for a human punch (peaks ~10 G).
+    // Filter both with a per-axis bound (sensor is ±16 G ≈ ±16000 raw, plus
+    // margin) AND a total-magnitude bound. Keep limits loose enough that real
+    // hard hits pass.
+    const AXIS_LIMIT: f32 = 16_500.0;
+    if !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&x)
+        || !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&y)
+        || !(-AXIS_LIMIT..=AXIS_LIMIT).contains(&z)
     {
-        return None; // Filtrar muestras claramente invalidas
+        return None;
     }
+    const MAX_MAG_SQ: f32 = 18_000.0 * 18_000.0;
+    if x * x + y * y + z * z > MAX_MAG_SQ {
+        return None;
+    }
+
     Some((ts, x, y, z))
 }
 
