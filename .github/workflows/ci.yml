@@ -74,7 +74,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           # Coincide con `requires-python = "==3.14.*"` en ml/pyproject.toml.
           # Si bajáramos a 3.12 hay que reflejarlo allí también para evitar
@@ -137,7 +137,7 @@ jobs:
         run: cargo audit --deny warnings
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.14'
 
