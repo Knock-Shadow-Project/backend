@@ -126,7 +126,8 @@ Servicio que corre en la Raspberry Pi 4. Funciona **sin conexión a internet**.
 
 - **BLE**: conecta 1 o 2 sensores y guarda muestras en SQLite.
 - **API local**: Axum en el puerto configurado (default `8080`).
-  - `GET /` — healthcheck.
+  - `GET /` — dashboard web embebido (HTML estático servido vía `include_str!`).
+  - `GET /health` — healthcheck JSON (`{"status":"ok","service":"pi-service"}`).
   - `GET /training/active` — devuelve el entrenamiento activo (o `active: false`).
   - `POST /training/start` — crea entrenamiento local. Body: `{ "user_id": i32, "jwt": "optional", "training_type": "Standard" }`.
   - `POST /training/stop` — finaliza entrenamiento local. Body: `{ "local_training_id": i64 }`.

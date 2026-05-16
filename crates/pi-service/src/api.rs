@@ -1,7 +1,8 @@
 use axum::{
     Json, Router,
     extract::{Path, State, WebSocketUpgrade},
-    response::IntoResponse,
+    http::header,
+    response::{Html, IntoResponse},
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,13 @@ use tracing::info;
 
 use crate::{AppState, db};
 
+/// Embedded dashboard HTML served on `GET /`.
+///
+/// Baked into the binary at compile time via `include_str!` so the pi-service
+/// ships a single artifact (no runtime filesystem dependency, no Dockerfile
+/// changes). Re-builds are required to update the UI.
+const INDEX_HTML: &str = include_str!("static/index.html");
+
 pub fn router(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
         .allow_origin(Any)
@@ -18,7 +26,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .allow_headers(Any);
 
     Router::new()
-        .route("/", get(health))
+        .route("/", get(index))
+        .route("/health", get(health))
         .route("/training/active", get(active_training))
         .route("/training/start", post(start_training))
         .route("/training/stop", post(stop_training))
@@ -26,6 +35,10 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/live", get(ws_handler))
         .layer(cors)
         .with_state(state)
+}
+
+async fn index() -> impl IntoResponse {
+    ([(header::CACHE_CONTROL, "no-store")], Html(INDEX_HTML))
 }
 
 async fn health(State(_state): State<Arc<AppState>>) -> impl IntoResponse {

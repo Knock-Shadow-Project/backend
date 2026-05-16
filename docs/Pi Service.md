@@ -105,12 +105,15 @@ Todas las rutas incluyen CORS abierto para la app móvil.
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET` | `/` | Healthcheck |
+| `GET` | `/` | Dashboard web embebido (HTML estático en `src/static/index.html`) |
+| `GET` | `/health` | Healthcheck JSON |
 | `GET` | `/training/active` | Devuelve si hay entrenamiento activo |
 | `POST` | `/training/start` | Inicia entrenamiento local |
 | `POST` | `/training/stop` | Finaliza entrenamiento local |
 | `GET` | `/trainings/:id/punches` | Lista golpes de un entrenamiento |
 | `GET` | `/live` | WebSocket con stream en tiempo real de golpes |
+
+El dashboard se sirve directamente desde el binario (`include_str!`) y se conecta al WebSocket `/live` para mostrar el último golpe detectado, una lista de los últimos 10 y controles para iniciar/parar el entrenamiento. Abrir en el navegador: `http://<ip-de-la-pi>:8080/` (o `http://knockshadow-pi.local:8080/` vía mDNS).
 
 #### `POST /training/start`
 

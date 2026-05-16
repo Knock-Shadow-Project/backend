@@ -1,0 +1,767 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+    <meta name="color-scheme" content="dark" />
+    <title>KnockShadow Pi — Last Punch</title>
+    <style>
+        :root {
+            --bg: #0b0d12;
+            --panel: #141822;
+            --panel-2: #1c2230;
+            --border: #242b3a;
+            --text: #e6e9ef;
+            --muted: #8a93a6;
+            --accent: #ff5d4a;
+            --accent-2: #4ab8ff;
+            --good: #3ddc97;
+            --warn: #f6c453;
+            --bad: #ff5d4a;
+            --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+        }
+
+        * { box-sizing: border-box; }
+        html, body { margin: 0; padding: 0; height: 100%; }
+        body {
+            background: radial-gradient(1200px 600px at 20% -10%, #1a2030 0%, #0b0d12 60%) fixed;
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                         "Helvetica Neue", Arial, sans-serif;
+            font-size: 16px;
+            line-height: 1.4;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(11, 13, 18, 0.85);
+            backdrop-filter: blur(8px);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        header h1 {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.4px;
+        }
+        header h1 .accent { color: var(--accent); }
+
+        /* Connection status pill */
+        .conn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .conn .dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--muted);
+            box-shadow: 0 0 0 0 rgba(0,0,0,0);
+        }
+        .conn[data-state="connected"]    .dot { background: var(--good);
+            box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18); }
+        .conn[data-state="connecting"]   .dot { background: var(--warn);
+            animation: pulse 1.2s ease-in-out infinite; }
+        .conn[data-state="disconnected"] .dot { background: var(--bad); }
+
+        @keyframes pulse {
+            0%,100% { box-shadow: 0 0 0 0 rgba(246, 196, 83, 0.6); }
+            50%     { box-shadow: 0 0 0 6px rgba(246, 196, 83, 0); }
+        }
+
+        /* Training bar */
+        #training-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--border);
+            background: var(--panel);
+        }
+        #training-info {
+            flex: 1 1 auto;
+            min-width: 0;
+            color: var(--muted);
+            font-size: 14px;
+        }
+        #training-info.active {
+            color: var(--text);
+        }
+        #training-info .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 6px;
+            background: rgba(74, 184, 255, 0.12);
+            color: var(--accent-2);
+            font-weight: 600;
+            font-size: 12px;
+            margin-right: 8px;
+        }
+        #user-id-input {
+            width: 70px;
+            padding: 8px 10px;
+            background: var(--panel-2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        #user-id-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        button {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            background: var(--panel-2);
+            color: var(--text);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, transform 0.05s;
+        }
+        button:hover:not(:disabled) { background: #252c3d; border-color: #38415a; }
+        button:active:not(:disabled) { transform: translateY(1px); }
+        button:disabled { opacity: 0.4; cursor: not-allowed; }
+        button.primary {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #0b0d12;
+        }
+        button.primary:hover:not(:disabled) {
+            background: #ff6e5d;
+            border-color: #ff6e5d;
+        }
+        button.danger {
+            background: transparent;
+            border-color: rgba(255, 93, 74, 0.4);
+            color: var(--accent);
+        }
+        button.danger:hover:not(:disabled) {
+            background: rgba(255, 93, 74, 0.1);
+            border-color: var(--accent);
+        }
+
+        /* Main layout */
+        main {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        @media (max-width: 800px) {
+            main { grid-template-columns: 1fr; }
+        }
+
+        /* Last punch card */
+        #last-punch {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px 24px;
+            box-shadow: var(--shadow);
+            min-height: 280px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+        #last-punch::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(400px 200px at 100% 0%,
+                rgba(255, 93, 74, 0.08) 0%, transparent 70%);
+            pointer-events: none;
+        }
+        #last-punch.flash {
+            animation: flash 0.6s ease-out;
+        }
+        @keyframes flash {
+            0%   { box-shadow: 0 0 0 0 rgba(255, 93, 74, 0.6), var(--shadow); }
+            50%  { box-shadow: 0 0 0 14px rgba(255, 93, 74, 0), var(--shadow); }
+            100% { box-shadow: var(--shadow); }
+        }
+
+        .empty-state {
+            color: var(--muted);
+            text-align: center;
+            font-size: 16px;
+            padding: 20px;
+        }
+
+        .punch-detail .lp-label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 6px;
+        }
+        #lp-type {
+            margin: 0 0 14px;
+            font-size: clamp(40px, 8vw, 64px);
+            font-weight: 800;
+            letter-spacing: -1px;
+            line-height: 1;
+            color: var(--accent);
+        }
+        .chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 22px;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 999px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .chip.arm-left  { color: var(--accent-2); border-color: rgba(74, 184, 255, 0.3); }
+        .chip.arm-right { color: var(--accent);   border-color: rgba(255, 93, 74, 0.3); }
+        .chip .ico { opacity: 0.8; }
+
+        .meta {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+            gap: 14px 22px;
+            margin: 0;
+        }
+        .meta > div { min-width: 0; }
+        .meta dt {
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            margin-bottom: 4px;
+        }
+        .meta dd {
+            margin: 0;
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        #classifier-idle {
+            margin-top: 18px;
+            display: inline-flex;
+            align-self: flex-start;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(246, 196, 83, 0.12);
+            color: var(--warn);
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        /* Timeline */
+        #timeline {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 18px 20px;
+            box-shadow: var(--shadow);
+        }
+        #timeline h3 {
+            margin: 0 0 12px;
+            font-size: 13px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            color: var(--muted);
+        }
+        #punch-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        #punch-list li {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 4px 12px;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            animation: slideIn 0.3s ease-out;
+        }
+        #punch-list li:last-child { border-bottom: none; }
+        #punch-list li .tl-type {
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text);
+        }
+        #punch-list li .tl-meta {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        #punch-list li .tl-age {
+            grid-row: 1 / span 2;
+            grid-column: 2;
+            align-self: center;
+            font-size: 12px;
+            color: var(--muted);
+            font-variant-numeric: tabular-nums;
+        }
+        #punch-list li.muted {
+            display: block;
+            color: var(--muted);
+            font-style: italic;
+            text-align: center;
+            padding: 28px 0;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%);
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 10px 16px;
+            font-size: 14px;
+            color: var(--text);
+            box-shadow: var(--shadow);
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s, transform 0.2s;
+            max-width: 90vw;
+        }
+        #toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(-4px);
+        }
+        #toast.error {
+            border-color: rgba(255, 93, 74, 0.6);
+            color: var(--accent);
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Knock<span class="accent">Shadow</span> Pi</h1>
+        <div id="conn-status" class="conn" data-state="connecting">
+            <span class="dot"></span>
+            <span class="label">connecting</span>
+        </div>
+    </header>
+
+    <section id="training-bar">
+        <div id="training-info">no active training</div>
+        <input id="user-id-input" type="number" value="1" min="1" aria-label="user id" />
+        <button id="btn-start" class="primary">Start training</button>
+        <button id="btn-stop" class="danger" disabled>Stop</button>
+    </section>
+
+    <main>
+        <article id="last-punch" class="empty">
+            <div class="empty-state" id="lp-empty">waiting for first punch…</div>
+            <div class="punch-detail" hidden>
+                <div class="lp-label">Last punch</div>
+                <h2 id="lp-type">—</h2>
+                <div class="chips">
+                    <span class="chip" id="lp-arm">—</span>
+                    <span class="chip" id="lp-height">—</span>
+                </div>
+                <dl class="meta">
+                    <div><dt>Confidence</dt><dd id="lp-prob">—</dd></div>
+                    <div><dt>Power</dt><dd id="lp-power">—</dd></div>
+                    <div><dt>When</dt><dd id="lp-time">—</dd></div>
+                </dl>
+                <span id="classifier-idle" hidden>classifier idle</span>
+            </div>
+        </article>
+
+        <aside id="timeline">
+            <h3>Recent (last 10)</h3>
+            <ul id="punch-list">
+                <li class="muted">no punches yet</li>
+            </ul>
+        </aside>
+    </main>
+
+    <div id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+        "use strict";
+
+        // ---------- Constants ----------
+        const TYPE_LABEL = {
+            jab: "Jab",
+            cross: "Cross",
+            hook: "Hook",
+            uppercut: "Uppercut",
+        };
+        const ARM_LABEL    = { derecha: "Right",  izquierda: "Left"  };
+        const HEIGHT_LABEL = { arriba:  "High",   abajo:     "Low"   };
+        const ARM_ICON     = { derecha: "↗",      izquierda: "↖"     };
+        const HEIGHT_ICON  = { arriba:  "↑",      abajo:     "↓"     };
+        const RECENT_MAX = 10;
+        const IDLE_MS = 15000;
+
+        // ---------- State ----------
+        const state = {
+            ws: null,
+            wsBackoffMs: 500,
+            wsBackoffMaxMs: 8000,
+            reconnectTimer: null,
+            recent: [],              // ring buffer (newest first)
+            activeTraining: null,    // { local_training_id, user_id, start_time } or null
+            trainingTickTimer: null,
+            ageTickTimer: null,
+            idleTickTimer: null,
+            lastPunchAt: null,       // epoch ms of newest punch
+        };
+
+        // ---------- DOM cache ----------
+        const $ = (id) => document.getElementById(id);
+        const dom = {
+            conn:       $("conn-status"),
+            connLabel:  $("conn-status").querySelector(".label"),
+            trainingInfo: $("training-info"),
+            userInput:  $("user-id-input"),
+            btnStart:   $("btn-start"),
+            btnStop:    $("btn-stop"),
+            lastPunch:  $("last-punch"),
+            lpEmpty:    $("lp-empty"),
+            lpDetail:   $("last-punch").querySelector(".punch-detail"),
+            lpType:     $("lp-type"),
+            lpArm:      $("lp-arm"),
+            lpHeight:   $("lp-height"),
+            lpProb:     $("lp-prob"),
+            lpPower:    $("lp-power"),
+            lpTime:     $("lp-time"),
+            lpIdle:     $("classifier-idle"),
+            punchList:  $("punch-list"),
+            toast:      $("toast"),
+        };
+
+        // ---------- Helpers ----------
+        function cap(s) {
+            return s && s.length ? s[0].toUpperCase() + s.slice(1) : (s || "?");
+        }
+        function describe(ev) {
+            const className = ev.class_name || "";
+            const [type] = className.split("_");
+            return {
+                type:   TYPE_LABEL[type]            ?? cap(type),
+                arm:    ARM_LABEL[ev.limb]          ?? cap(ev.limb),
+                height: HEIGHT_LABEL[ev.position]   ?? cap(ev.position),
+                armIcon:    ARM_ICON[ev.limb]       ?? "",
+                heightIcon: HEIGHT_ICON[ev.position] ?? "",
+                armKey:     ev.limb || "",
+            };
+        }
+        function fmtAge(detectedAtMs) {
+            const diff = Math.max(0, Math.round((Date.now() - detectedAtMs) / 1000));
+            if (diff < 2) return "just now";
+            if (diff < 60) return `${diff}s ago`;
+            const m = Math.floor(diff / 60);
+            if (m < 60) return `${m}m ago`;
+            const h = Math.floor(m / 60);
+            return `${h}h ago`;
+        }
+        function fmtDuration(startIso) {
+            const startMs = Date.parse(startIso);
+            if (!Number.isFinite(startMs)) return "";
+            const s = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+            const mm = String(Math.floor(s / 60)).padStart(2, "0");
+            const ss = String(s % 60).padStart(2, "0");
+            return `${mm}:${ss}`;
+        }
+        function showToast(msg, isError = false) {
+            dom.toast.textContent = msg;
+            dom.toast.classList.toggle("error", !!isError);
+            dom.toast.classList.add("show");
+            clearTimeout(showToast._t);
+            showToast._t = setTimeout(() => dom.toast.classList.remove("show"), 3200);
+        }
+
+        // ---------- Connection indicator ----------
+        function setConn(stateName) {
+            dom.conn.dataset.state = stateName;
+            dom.connLabel.textContent = stateName;
+        }
+
+        // ---------- WebSocket ----------
+        function connectWs() {
+            clearTimeout(state.reconnectTimer);
+            try {
+                const proto = location.protocol === "https:" ? "wss:" : "ws:";
+                const ws = new WebSocket(`${proto}//${location.host}/live`);
+                state.ws = ws;
+                setConn("connecting");
+
+                ws.addEventListener("open", () => {
+                    state.wsBackoffMs = 500;
+                    setConn("connected");
+                });
+                ws.addEventListener("message", (e) => {
+                    try {
+                        const ev = JSON.parse(e.data);
+                        handlePunch(ev);
+                    } catch (_err) {
+                        // ignore malformed frames
+                    }
+                });
+                ws.addEventListener("close", scheduleReconnect);
+                ws.addEventListener("error", () => {
+                    try { ws.close(); } catch (_e) {}
+                });
+            } catch (_e) {
+                scheduleReconnect();
+            }
+        }
+        function scheduleReconnect() {
+            setConn("disconnected");
+            clearTimeout(state.reconnectTimer);
+            const delay = state.wsBackoffMs;
+            state.reconnectTimer = setTimeout(connectWs, delay);
+            state.wsBackoffMs = Math.min(state.wsBackoffMs * 2, state.wsBackoffMaxMs);
+        }
+
+        // ---------- Punch handling ----------
+        function handlePunch(ev) {
+            const detectedAtMs = Date.parse(ev.detected_at) || Date.now();
+            const enriched = { ...ev, _ts: detectedAtMs };
+
+            state.recent.unshift(enriched);
+            if (state.recent.length > RECENT_MAX) state.recent.length = RECENT_MAX;
+            state.lastPunchAt = detectedAtMs;
+
+            renderLastPunch(enriched);
+            renderTimeline();
+            updateIdleBadge();
+
+            dom.lastPunch.classList.remove("flash");
+            // Force reflow so the animation restarts on rapid consecutive punches.
+            void dom.lastPunch.offsetWidth;
+            dom.lastPunch.classList.add("flash");
+        }
+
+        function renderLastPunch(ev) {
+            const d = describe(ev);
+            dom.lastPunch.classList.remove("empty");
+            dom.lpEmpty.hidden = true;
+            dom.lpDetail.hidden = false;
+
+            dom.lpType.textContent = d.type;
+
+            dom.lpArm.className = "chip" + (d.armKey === "izquierda" ? " arm-left" : d.armKey === "derecha" ? " arm-right" : "");
+            dom.lpArm.innerHTML = `<span class="ico">${d.armIcon}</span> ${d.arm}`;
+            dom.lpHeight.innerHTML = `<span class="ico">${d.heightIcon}</span> ${d.height}`;
+
+            dom.lpProb.textContent = Number.isFinite(ev.prob)
+                ? `${(ev.prob * 100).toFixed(1)}%`
+                : "—";
+            dom.lpPower.textContent = ev.power != null && Number.isFinite(ev.power)
+                ? `${ev.power.toFixed(2)} G`
+                : "—";
+            dom.lpTime.textContent = fmtAge(ev._ts);
+        }
+
+        function renderTimeline() {
+            if (state.recent.length === 0) {
+                dom.punchList.innerHTML = `<li class="muted">no punches yet</li>`;
+                return;
+            }
+            const html = state.recent.map((ev) => {
+                const d = describe(ev);
+                const probTxt = Number.isFinite(ev.prob) ? `${(ev.prob * 100).toFixed(0)}%` : "—";
+                const powerTxt = ev.power != null && Number.isFinite(ev.power)
+                    ? `${ev.power.toFixed(2)} G` : "—";
+                return `<li>
+                    <div class="tl-type">${escapeHtml(d.type)}</div>
+                    <div class="tl-meta">${escapeHtml(d.arm)} · ${escapeHtml(d.height)} · ${probTxt} · ${powerTxt}</div>
+                    <div class="tl-age" data-ts="${ev._ts}">${fmtAge(ev._ts)}</div>
+                </li>`;
+            }).join("");
+            dom.punchList.innerHTML = html;
+        }
+
+        function updateAges() {
+            // Refresh "Xs ago" labels in the timeline.
+            const items = dom.punchList.querySelectorAll(".tl-age");
+            items.forEach((el) => {
+                const ts = Number(el.dataset.ts);
+                if (Number.isFinite(ts)) el.textContent = fmtAge(ts);
+            });
+            // And the big last-punch time.
+            if (state.recent.length > 0) {
+                dom.lpTime.textContent = fmtAge(state.recent[0]._ts);
+            }
+        }
+
+        function updateIdleBadge() {
+            const active = state.activeTraining != null;
+            const stale = state.lastPunchAt != null && (Date.now() - state.lastPunchAt) > IDLE_MS;
+            dom.lpIdle.hidden = !(active && stale);
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/[&<>"']/g, (c) => ({
+                "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+            }[c]));
+        }
+
+        // ---------- Training control ----------
+        async function refreshActiveTraining() {
+            try {
+                const r = await fetch("/training/active", { cache: "no-store" });
+                if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                const data = await r.json();
+                setActiveTraining(data.active ? {
+                    local_training_id: data.local_training_id,
+                    user_id: data.user_id,
+                    start_time: data.start_time,
+                } : null);
+            } catch (e) {
+                // Don't toast on initial load failures; the user can still see the WS state.
+                console.warn("refreshActiveTraining:", e);
+            }
+        }
+
+        function setActiveTraining(t) {
+            state.activeTraining = t;
+            clearInterval(state.trainingTickTimer);
+            state.trainingTickTimer = null;
+
+            if (t) {
+                dom.trainingInfo.classList.add("active");
+                renderTrainingBar();
+                state.trainingTickTimer = setInterval(renderTrainingBar, 1000);
+                dom.btnStart.disabled = true;
+                dom.btnStop.disabled = false;
+                dom.userInput.disabled = true;
+                dom.userInput.value = String(t.user_id ?? dom.userInput.value);
+            } else {
+                dom.trainingInfo.classList.remove("active");
+                dom.trainingInfo.textContent = "no active training";
+                dom.btnStart.disabled = false;
+                dom.btnStop.disabled = true;
+                dom.userInput.disabled = false;
+            }
+            updateIdleBadge();
+        }
+
+        function renderTrainingBar() {
+            const t = state.activeTraining;
+            if (!t) return;
+            const dur = fmtDuration(t.start_time);
+            dom.trainingInfo.innerHTML =
+                `<span class="badge">Training #${t.local_training_id}</span>` +
+                `user ${escapeHtml(String(t.user_id))} · ${dur}`;
+        }
+
+        async function startTraining() {
+            const userId = Number(dom.userInput.value);
+            if (!Number.isInteger(userId) || userId < 1) {
+                showToast("invalid user id", true);
+                return;
+            }
+            dom.btnStart.disabled = true;
+            try {
+                const r = await fetch("/training/start", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ user_id: userId, training_type: "Standard" }),
+                });
+                if (!r.ok) {
+                    const body = await r.text();
+                    throw new Error(body || `HTTP ${r.status}`);
+                }
+                showToast("training started");
+                await refreshActiveTraining();
+            } catch (e) {
+                showToast(`failed to start: ${e.message || e}`, true);
+                dom.btnStart.disabled = false;
+            }
+        }
+
+        async function stopTraining() {
+            const t = state.activeTraining;
+            if (!t) return;
+            dom.btnStop.disabled = true;
+            try {
+                const r = await fetch("/training/stop", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ local_training_id: t.local_training_id }),
+                });
+                if (!r.ok) {
+                    const body = await r.text();
+                    throw new Error(body || `HTTP ${r.status}`);
+                }
+                showToast("training stopped");
+                await refreshActiveTraining();
+            } catch (e) {
+                showToast(`failed to stop: ${e.message || e}`, true);
+                dom.btnStop.disabled = false;
+            }
+        }
+
+        // ---------- Pre-fill timeline from REST (best-effort) ----------
+        async function prefillTimeline() {
+            const t = state.activeTraining;
+            if (!t) return;
+            try {
+                const r = await fetch(`/trainings/${t.local_training_id}/punches`, { cache: "no-store" });
+                if (!r.ok) return;
+                const punches = await r.json();
+                if (!Array.isArray(punches) || punches.length === 0) return;
+                // newest first, capped to RECENT_MAX
+                const sorted = punches
+                    .slice()
+                    .sort((a, b) => (Date.parse(b.detected_at) || 0) - (Date.parse(a.detected_at) || 0))
+                    .slice(0, RECENT_MAX);
+                state.recent = sorted.map((p) => ({ ...p, _ts: Date.parse(p.detected_at) || Date.now() }));
+                state.lastPunchAt = state.recent[0]?._ts || null;
+                renderLastPunch(state.recent[0]);
+                renderTimeline();
+            } catch (e) {
+                console.warn("prefillTimeline:", e);
+            }
+        }
+
+        // ---------- Init ----------
+        dom.btnStart.addEventListener("click", startTraining);
+        dom.btnStop.addEventListener("click", stopTraining);
+
+        (async () => {
+            await refreshActiveTraining();
+            await prefillTimeline();
+            connectWs();
+            state.ageTickTimer = setInterval(updateAges, 1000);
+            state.idleTickTimer = setInterval(updateIdleBadge, 2000);
+        })();
+    </script>
+</body>
+</html>
