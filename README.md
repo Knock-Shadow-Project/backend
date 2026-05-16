@@ -1,23 +1,25 @@
 # KnockShadow — Backend
 
-Backend monorepo for **KnockShadow**, a smart-bag system that captures
-boxing-punch telemetry over Bluetooth Low Energy, classifies each punch with a
-1D CNN, and stores the results for review and analytics.
+Monorepo del backend de **KnockShadow**, un saco inteligente que captura
+telemetría de golpes de boxeo por Bluetooth Low Energy, clasifica cada golpe
+con una CNN 1D y almacena los resultados para revisión y analítica.
 
-The repo ships **two parallel stacks** that share most of the code:
+El repo incluye **dos stacks en paralelo** que comparten la mayor parte del
+código:
 
-| Stack | Runs on | Database | Internet required |
-|-------|---------|----------|-------------------|
-| **Cloud** (`docker-compose.yaml`) | VPS / dev laptop | PostgreSQL / TimescaleDB | Yes |
-| **Raspberry Pi** (`docker-compose.pi.yaml`) | Raspberry Pi 4 (ARM64) | SQLite (offline-first) | No (optional sync) |
+| Stack | Corre en | Base de datos | Internet requerido |
+|-------|----------|---------------|--------------------|
+| **Cloud** (`docker-compose.yaml`) | VPS / portátil de desarrollo | PostgreSQL / TimescaleDB | Sí |
+| **Raspberry Pi** (`docker-compose.pi.yaml`) | Raspberry Pi 4 (ARM64) | SQLite (offline-first) | No (sync opcional) |
 
-The Pi stack is the production target; the cloud stack is used for labelling,
-training, central storage, and ML experimentation. The two converge when the
-Pi has internet access and syncs queued records to the cloud API.
+El stack de la Pi es el objetivo de producción; el stack cloud se usa para
+etiquetado, entrenamiento, almacenamiento central y experimentación de ML.
+Los dos convergen cuando la Pi tiene internet y sincroniza los registros
+encolados contra la API cloud.
 
 ---
 
-## Architecture
+## Arquitectura
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -27,86 +29,87 @@ Pi has internet access and syncs queued records to the cloud API.
 │   │  Timescale   │◄─┤  REST + WS   │─►│   /metrics │─►│  dashboards  │  │
 │   └──────────────┘  └──────┬───────┘  └────────────┘  └──────────────┘  │
 │                            │                                            │
-│                            │   sync (when Pi has internet)              │
+│                            │   sync (cuando la Pi tiene internet)       │
 └────────────────────────────┼────────────────────────────────────────────┘
                              ▲
 ┌────────────────────────────┼────────────────────────────────────────────┐
-│                        LOCAL Wi-Fi                                      │
+│                        Wi-Fi LOCAL                                      │
 │                            │                                            │
 │   ┌──────────────────────────────────────────────────────────────────┐  │
 │   │                       RASPBERRY PI 4                             │  │
 │   │  ┌─────────────┐  BLE  ┌──────────────┐  SQLite  ┌────────────┐  │  │
-│   │  │  Sensors    │──────►│  pi-service  │◄────────►│pi-inference│  │  │
+│   │  │  Sensores   │──────►│  pi-service  │◄────────►│pi-inference│  │  │
 │   │  │  (1–2x)     │       │   (Rust)     │          │ (Py / CNN) │  │  │
 │   │  └─────────────┘       └──────┬───────┘          └────────────┘  │  │
 │   │                               │ HTTP / WS                        │  │
 │   │                               ▼                                  │  │
 │   │                        ┌──────────────┐                          │  │
-│   │                        │  Mobile App  │   mDNS:                  │  │
-│   │                        │ (mDNS disc.) │   _knockshadow._tcp      │  │
+│   │                        │ App Móvil    │   mDNS:                  │  │
+│   │                        │ (descub.     │   _knockshadow._tcp      │  │
+│   │                        │  mDNS)       │                          │  │
 │   │                        └──────────────┘                          │  │
 │   └──────────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
-See [docs/Deployment.md](docs/Deployment.md) for the full diagram and the
-deployment runbook.
+Ver [docs/Deployment.md](docs/Deployment.md) para el diagrama completo y el
+runbook de despliegue.
 
 ---
 
-## Repository layout
+## Estructura del repositorio
 
 ```
 backend/
-├── Cargo.toml                 # Rust workspace root
+├── Cargo.toml                 # Raíz del workspace Rust
 ├── crates/
-│   ├── api-db/                # Cloud REST + WebSocket API (Axum + sqlx + PostgreSQL)
-│   ├── bt-reader/             # Legacy BLE → PostgreSQL streamer (pre-Pi)
-│   └── pi-service/            # Offline-first Pi service (BLE + SQLite + local API + mDNS)
-├── ml/                        # Python pipeline (PyTorch)
-│   ├── pipeline/              # Signal processing + detection + dataset I/O
-│   ├── model/                 # Trained artefacts (.pt, class_names.npy, norm_*.npy)
-│   ├── train.py               # CNN training entry point
-│   ├── main.py                # Cloud inference (PostgreSQL) — legacy
-│   ├── pi_inference.py        # Pi inference (SQLite, offline)
-│   ├── app.py                 # Streamlit labelling UI
-│   └── sync_ble_to_cloud.py   # One-shot script: copy ble_samples Pi → cloud
-├── db/init/                   # PostgreSQL schema (TimescaleDB hypertables)
-├── docker-compose.yaml        # Cloud stack (db + api-db + ml-app + Prom + Grafana)
-├── docker-compose.pi.yaml     # Pi stack (pi-service + pi-inference + ml-app)
-├── Dockerfile.api-db          # Cloud API image
-├── Dockerfile.pi-service      # Pi service image (ARM64)
-├── Dockerfile.pi-inference    # Pi inference image (CPU-only torch)
-├── Dockerfile.ble-stream      # Legacy BLE → PostgreSQL image
-├── grafana/                   # Grafana provisioning (dashboards, datasources)
-├── prometheus/                # Prometheus scrape config
-├── docs/                      # Long-form documentation (see below)
-├── AGENTS.md                  # Agent-facing notes (conventions, build, run)
-└── yaak_collection.json       # API client collection (Postman-style)
+│   ├── api-db/                # API REST + WebSocket cloud (Axum + sqlx + PostgreSQL)
+│   ├── bt-reader/             # Streamer BLE → PostgreSQL legacy (pre-Pi)
+│   └── pi-service/            # Servicio offline-first para la Pi (BLE + SQLite + API local + mDNS)
+├── ml/                        # Pipeline Python (PyTorch)
+│   ├── pipeline/              # Procesamiento de señal + detección + I/O del dataset
+│   ├── model/                 # Artefactos entrenados (.pt, class_names.npy, norm_*.npy)
+│   ├── train.py               # Punto de entrada del entrenamiento de la CNN
+│   ├── main.py                # Inferencia cloud (PostgreSQL) — legacy
+│   ├── pi_inference.py        # Inferencia en la Pi (SQLite, offline)
+│   ├── app.py                 # UI Streamlit para etiquetado
+│   └── sync_ble_to_cloud.py   # Script one-shot: vuelca ble_samples Pi → cloud
+├── db/init/                   # Esquema PostgreSQL (hypertables de TimescaleDB)
+├── docker-compose.yaml        # Stack cloud (db + api-db + ml-app + Prom + Grafana)
+├── docker-compose.pi.yaml     # Stack Pi (pi-service + pi-inference + ml-app)
+├── Dockerfile.api-db          # Imagen de la API cloud
+├── Dockerfile.pi-service      # Imagen del servicio Pi (ARM64)
+├── Dockerfile.pi-inference    # Imagen de inferencia Pi (torch CPU-only)
+├── Dockerfile.ble-stream      # Imagen legacy BLE → PostgreSQL
+├── grafana/                   # Provisioning de Grafana (dashboards, datasources)
+├── prometheus/                # Config de scrape de Prometheus
+├── docs/                      # Documentación extensa (ver más abajo)
+├── AGENTS.md                  # Notas para agentes (convenciones, build, run)
+└── yaak_collection.json       # Colección de cliente API (estilo Postman)
 ```
 
 ---
 
 ## Quick start
 
-### Cloud stack (PostgreSQL + API + labelling UI)
+### Stack cloud (PostgreSQL + API + UI de etiquetado)
 
 ```bash
 git clone https://github.com/Knock-Shadow-Project/backend.git
 cd backend
 
-# Optional: override the JWT secret before first run
-export JWT_SECRET=your-strong-secret
+# Opcional: sobreescribe el JWT secret antes del primer arranque
+export JWT_SECRET=tu-secret-fuerte
 
 docker compose -f docker-compose.yaml up --build -d
 ```
 
-Once the containers are healthy:
+Cuando los contenedores estén healthy:
 
-| Service | URL |
-|---------|-----|
-| REST + WebSocket API | http://localhost:3000 |
-| Streamlit labelling UI | http://localhost:8501 |
+| Servicio | URL |
+|----------|-----|
+| API REST + WebSocket | http://localhost:3000 |
+| UI de etiquetado Streamlit | http://localhost:8501 |
 | Prometheus | http://localhost:9090 |
 | Grafana | http://localhost:3001 (admin / admin) |
 | PostgreSQL | `localhost:5432` (knockshadow / knockshadow) |
@@ -114,99 +117,101 @@ Once the containers are healthy:
 Smoke test:
 
 ```bash
-curl http://localhost:3000/                 # API root
-curl http://localhost:3000/metrics | head   # Prometheus metrics
+curl http://localhost:3000/                 # Raíz de la API
+curl http://localhost:3000/metrics | head   # Métricas Prometheus
 ```
 
-### Raspberry Pi stack (offline-first)
+### Stack Raspberry Pi (offline-first)
 
-On the Pi (Raspberry Pi OS 64-bit, with `bluetoothd` active):
+En la Pi (Raspberry Pi OS 64-bit, con `bluetoothd` activo):
 
 ```bash
 export DEVICE_MAC_1=DF:65:81:D0:D7:E5
 export DEVICE_MAC_2=CB:01:10:3E:0D:61
-# Optional — enables periodic sync to the cloud API
+# Opcional — activa la sincronización periódica con la API cloud
 export API_BASE_URL=https://api.knockshadow.site
 
 docker compose -f docker-compose.pi.yaml up --build -d
 ```
 
-The mobile app auto-discovers the Pi via mDNS (`knockshadow-pi.local`,
-service type `_knockshadow._tcp`) and talks to `http://<pi-ip>:8080`.
+La app móvil descubre la Pi automáticamente por mDNS
+(`knockshadow-pi.local`, tipo de servicio `_knockshadow._tcp`) y se conecta
+a `http://<ip-pi>:8080`.
 
-Full runbook, cross-compilation, and troubleshooting in
+Runbook completo, compilación cruzada y troubleshooting en
 [docs/Deployment.md](docs/Deployment.md).
 
-### Local Rust workflow
+### Flujo local de Rust
 
 ```bash
-cargo check --workspace             # Compile every crate
-cargo run -p api-db                 # Cloud API (needs PostgreSQL running)
-cargo run -p pi-service             # Pi service (needs DEVICE_MAC_* env)
+cargo check --workspace             # Compila cada crate
+cargo run -p api-db                 # API cloud (necesita PostgreSQL corriendo)
+cargo run -p pi-service             # Servicio Pi (necesita DEVICE_MAC_* en env)
 cargo test  --workspace             # Tests
 ```
 
-### Local Python workflow
+### Flujo local de Python
 
 ```bash
 cd ml
-uv sync                             # Resolve from uv.lock
-uv run python train.py              # Train the CNN
-uv run python pi_inference.py       # Inference against pi_data.db
-uv run streamlit run app.py         # Labelling UI
+uv sync                             # Resuelve desde uv.lock
+uv run python train.py              # Entrena la CNN
+uv run python pi_inference.py       # Inferencia contra pi_data.db
+uv run streamlit run app.py         # UI de etiquetado
 ```
 
 ---
 
-## Tech stack
+## Stack técnico
 
 **Rust (workspace, edition 2024):**
-`axum` (HTTP + WebSocket), `sqlx` (async SQL with compile-time checks),
+`axum` (HTTP + WebSocket), `sqlx` (SQL async con compile-time checks),
 `btleplug` (BLE), `tokio`, `reqwest`, `jsonwebtoken`, `bcrypt`,
-`axum-prometheus`. mDNS publishing on the Pi is delegated to the host's
-`avahi-daemon` via DBus (`avahi-publish-service`) — there is **no** in-process
-mDNS responder, which avoids the UDP/5353 bind conflict when running with
+`axum-prometheus`. El anuncio mDNS en la Pi se delega al `avahi-daemon` del
+host vía DBus (`avahi-publish-service`) — **no hay** responder mDNS en el
+proceso, lo que evita la colisión en UDP/5353 cuando se corre con
 `network_mode: host`.
 
 **Python (==3.14.*):**
-`torch` (CPU on Pi, GPU optional on cloud), `numpy`, `pandas`, `scipy`,
+`torch` (CPU en la Pi, GPU opcional en cloud), `numpy`, `pandas`, `scipy`,
 `scikit-learn`, `streamlit`, `plotly`, `structlog`, `pydantic`, `psycopg2`,
 `websockets`.
 
-**Storage:**
-PostgreSQL + TimescaleDB hypertables in the cloud; SQLite (WAL,
-`busy_timeout=5000`, `synchronous=NORMAL`) on the Pi, shared between
-`pi-service`, `pi-inference`, and `ml-app` through a Docker volume.
+**Almacenamiento:**
+PostgreSQL + hypertables de TimescaleDB en el cloud; SQLite (WAL,
+`busy_timeout=5000`, `synchronous=NORMAL`) en la Pi, compartido entre
+`pi-service`, `pi-inference` y `ml-app` mediante un volumen Docker.
 
-**Observability:** Prometheus scrapes `api-db /metrics`; Grafana provisions
-dashboards out of `grafana/provisioning/`.
-
----
-
-## Documentation
-
-| Doc | What's in it |
-|-----|--------------|
-| [docs/API.md](docs/API.md) | Cloud REST + WebSocket reference (`/login`, `/users`, `/trainings`, `/punches`, `/history`, `/ws`, `/metrics`). |
-| [docs/Deployment.md](docs/Deployment.md) | Cloud vs Pi deployment, cross-compilation, troubleshooting, checklists. |
-| [docs/Pi Service.md](docs/Pi%20Service.md) | `pi-service` internals: BLE, SQLite schema, local API, mDNS (avahi), remote sync. |
-| [docs/Pi Inference.md](docs/Pi%20Inference.md) | `pi_inference.py` internals: model loading, async producer/consumer, CLI. |
-| [docs/Red Neuronal.md](docs/Red%20Neuronal.md) | ML pipeline package, `PunchCNN` architecture, training, labelling UI. |
-| [docs/Bluetooth Streamer.md](docs/Bluetooth%20Streamer.md) | Legacy `ble-stream` notes (kept for reference; not part of the current production path). |
-| [AGENTS.md](AGENTS.md) | Conventions and quick reference for agents working on this repo. |
+**Observabilidad:** Prometheus scrapea `api-db /metrics`; Grafana aprovisiona
+dashboards desde `grafana/provisioning/`.
 
 ---
 
-## Development
+## Documentación
+
+| Doc | Contenido |
+|-----|-----------|
+| [docs/API.md](docs/API.md) | Referencia REST + WebSocket de la API cloud (`/login`, `/users`, `/trainings`, `/punches`, `/history`, `/ws`, `/metrics`). |
+| [docs/Deployment.md](docs/Deployment.md) | Despliegue cloud vs Pi, compilación cruzada, troubleshooting, checklists. |
+| [docs/Pi Service.md](docs/Pi%20Service.md) | Internos de `pi-service`: BLE, esquema SQLite, API local, mDNS (avahi), sync remoto. |
+| [docs/Pi Inference.md](docs/Pi%20Inference.md) | Internos de `pi_inference.py`: carga de modelo, productor/consumidor asíncronos, CLI. |
+| [docs/Red Neuronal.md](docs/Red%20Neuronal.md) | Paquete del pipeline ML, arquitectura `PunchCNN`, entrenamiento, UI de etiquetado. |
+| [docs/Bluetooth Streamer.md](docs/Bluetooth%20Streamer.md) | Notas del `ble-stream` legacy (se mantiene como referencia; no forma parte del path de producción actual). |
+| [AGENTS.md](AGENTS.md) | Convenciones y referencia rápida para agentes trabajando en este repo. |
+
+---
+
+## Desarrollo
 
 ### CI
 
-GitHub Actions runs four jobs on every push and PR ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
+GitHub Actions corre cuatro jobs en cada push y PR
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)):
 
 1. **Rust** — `cargo fmt --check`, `cargo clippy -D warnings`, `cargo test`.
-2. **Python (`ml/`)** — `ruff check`, `ruff format --check`, `mypy`, `pytest` with coverage gate (≥30%).
-3. **Dependency audit** — `cargo-audit` + `pip-audit` (non-blocking until the advisory backlog hits 0).
-4. **Docker** — builds `api-db`, `pi-service`, and `pi-inference` images as a smoke test.
+2. **Python (`ml/`)** — `ruff check`, `ruff format --check`, `mypy`, `pytest` con gate de cobertura (≥30%).
+3. **Auditoría de dependencias** — `cargo-audit` + `pip-audit` (no bloqueante hasta que el backlog de advisories esté en 0).
+4. **Docker** — construye las imágenes `api-db`, `pi-service` y `pi-inference` como smoke test.
 
 ### Pre-commit
 
@@ -215,26 +220,29 @@ pre-commit install
 pre-commit run --all-files
 ```
 
-The hooks mirror CI: ruff (Python), `cargo fmt` and `cargo clippy` (Rust),
-plus secret-scanning and basic hygiene (trailing whitespace, large files,
-private keys). What fails locally also fails in CI.
+Los hooks reflejan el CI: ruff (Python), `cargo fmt` y `cargo clippy`
+(Rust), más detección de secretos e higiene básica (trailing whitespace,
+archivos grandes, claves privadas). Lo que falla en local también falla en
+CI.
 
-### Conventions
+### Convenciones
 
-- API payload fields are **English** (`email`, `first_name`, `user_id`, …).
-- Database columns remain **Spanish** (`correo`, `nombre`, …) and are mapped
-  via `#[sqlx(rename = "...")]`.
-- Passwords are bcrypt-hashed before storage; never store plaintext.
-- JWTs are required on every endpoint except `POST /login` and `POST /register`.
-- The Pi must keep working without internet — the cloud sync is a best-effort
-  background loop, not a hard dependency.
+- Los campos del payload de la API son **en inglés** (`email`, `first_name`,
+  `user_id`, …).
+- Las columnas de base de datos siguen **en español** (`correo`, `nombre`,
+  …) y se mapean con `#[sqlx(rename = "...")]`.
+- Las contraseñas se hashean con bcrypt antes de almacenarse; nunca se
+  guarda plaintext.
+- Todos los endpoints requieren JWT excepto `POST /login` y `POST /register`.
+- La Pi debe seguir funcionando sin internet — la sincronización con cloud
+  es un loop en background "best-effort", nunca una dependencia dura.
 
-See [AGENTS.md](AGENTS.md) for the full set of conventions and the recommended
-workflow when modifying the codebase.
+Ver [AGENTS.md](AGENTS.md) para el set completo de convenciones y el flujo
+recomendado al modificar el código.
 
 ---
 
-## Authors
+## Autores
 
 - Victor Galan
 - Cristian Davila

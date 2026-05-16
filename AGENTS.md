@@ -263,28 +263,30 @@ Si prefieres entrenar en tu PC por rendimiento:
 - `btleplug` — BLE abstraction (Linux uses BlueZ via DBus)
 - `reqwest` — HTTP client for remote sync
 
-> **mDNS on the Pi is not a cargo dependency.** `pi-service` shells out to
-> `avahi-publish-service` (provided by `avahi-utils` in the runtime image)
-> and lets the host's `avahi-daemon` own UDP/5353. An in-process responder
-> would collide with the host daemon because the container runs with
-> `network_mode: host`. See `crates/pi-service/src/mdns.rs`.
+> **mDNS en la Pi no es una dependencia de cargo.** `pi-service` lanza
+> `avahi-publish-service` como subproceso (provisto por `avahi-utils` en la
+> imagen de runtime) y deja que el `avahi-daemon` del host sea dueño del
+> UDP/5353. Un responder en-proceso colisionaría con el daemon del host
+> porque el contenedor corre con `network_mode: host`. Ver
+> `crates/pi-service/src/mdns.rs`.
 
 ## CI / pre-commit
 
-GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on push and PR:
+GitHub Actions (`.github/workflows/ci.yml`) corre cuatro jobs en cada push y
+PR:
 
 1. **Rust** — `cargo fmt --check`, `cargo clippy --workspace -D warnings`, `cargo test`.
-2. **Python (`ml/`)** — `ruff check`, `ruff format --check`, `mypy`, `pytest --cov` (≥30% gate).
-3. **Audit** (non-blocking) — `cargo-audit` + `pip-audit` on each `requirements_*.txt`.
-4. **Docker** — buildx smoke build for `api-db`, `pi-service`, `pi-inference`.
+2. **Python (`ml/`)** — `ruff check`, `ruff format --check`, `mypy`, `pytest --cov` (gate ≥30%).
+3. **Auditoría** (no bloqueante) — `cargo-audit` + `pip-audit` sobre cada `requirements_*.txt`.
+4. **Docker** — smoke build con buildx de `api-db`, `pi-service` y `pi-inference`.
 
-Mirror locally with `pre-commit install && pre-commit run --all-files`.
+Para replicar en local: `pre-commit install && pre-commit run --all-files`.
 
-## Observability
+## Observabilidad
 
-The cloud stack ships Prometheus + Grafana out of the box (see
-`docker-compose.yaml`). `api-db` exposes `/metrics` through
-`PrometheusMetricLayer`, intentionally **outside** the auth middleware so the
-scraper does not need a JWT. Grafana provisioning lives in
-`grafana/provisioning/`; default credentials are `admin/admin` (override with
-`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`).
+El stack cloud trae Prometheus + Grafana de fábrica (ver
+`docker-compose.yaml`). `api-db` expone `/metrics` a través de
+`PrometheusMetricLayer`, intencionalmente **fuera** del middleware de auth
+para que el scraper no necesite JWT. El provisioning de Grafana vive en
+`grafana/provisioning/`; las credenciales por defecto son `admin/admin`
+(sobreescribir con `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`).
