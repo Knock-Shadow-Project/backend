@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json, Router,
 };
 
 use crate::models::{CreateEntrenamiento, Entrenamiento, Pagination, UpdateEntrenamiento};
@@ -20,20 +20,14 @@ const ENTRENAMIENTO_COLUMNS: &str =
 
 pub fn routes() -> Router<AppState> {
     Router::new()
-        .route(
-            "/trainings",
-            get(list_trainings).post(create_training),
-        )
+        .route("/trainings", get(list_trainings).post(create_training))
         .route(
             "/trainings/{id}",
             get(get_training)
                 .put(update_training)
                 .delete(delete_training),
         )
-        .route(
-            "/users/{id}/trainings",
-            get(list_trainings_by_user),
-        )
+        .route("/users/{id}/trainings", get(list_trainings_by_user))
 }
 
 async fn list_trainings(

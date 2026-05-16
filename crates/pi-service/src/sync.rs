@@ -182,7 +182,10 @@ async fn mark_failure(db: &Pool<Sqlite>, id: i64, now: &chrono::DateTime<chrono:
     .execute(db)
     .await
     {
-        warn!("Failed to record retry attempt for sync_queue id={}: {}", id, e);
+        warn!(
+            "Failed to record retry attempt for sync_queue id={}: {}",
+            id, e
+        );
     }
 }
 

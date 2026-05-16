@@ -1,5 +1,5 @@
 use futures::StreamExt;
-use tokio::time::{interval, sleep, Duration};
+use tokio::time::{Duration, interval, sleep};
 use tracing::{debug, error, info, warn};
 
 use crate::bt::decode_data;
@@ -26,9 +26,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // MAC del dispositivo objetivo — requerido por env para evitar conexiones
     // accidentales a sensores ajenos o defaults filtrados al repo.
-    let mac = std::env::var("DEVICE_MAC").map_err(|_| {
-        "DEVICE_MAC environment variable is required (e.g. DEVICE_MAC=DF:65:81:D0:D7:E5)"
-    })?;
+    let mac = std::env::var("DEVICE_MAC").map_err(
+        |_| "DEVICE_MAC environment variable is required (e.g. DEVICE_MAC=DF:65:81:D0:D7:E5)",
+    )?;
     // DATABASE_URL fail-fast: arrastrar credenciales hardcodeadas como fallback
     // es una mala práctica y deja la base de datos abierta a errores de despliegue.
     let database_url = std::env::var("DATABASE_URL").map_err(|_| {

@@ -1,6 +1,6 @@
+use sqlx::PgPool;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use sqlx::PgPool;
 
 #[derive(Clone)]
 pub struct AppState {

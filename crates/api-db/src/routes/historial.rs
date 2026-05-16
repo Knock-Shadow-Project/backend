@@ -1,8 +1,8 @@
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
-    Json, Router,
 };
 
 use crate::models::{CreateHistorial, Historial, HistorialDetail, Pagination, UpdateHistorial};
@@ -13,14 +13,9 @@ pub fn routes() -> Router<AppState> {
         .route("/history", get(list_history).post(create_history))
         .route(
             "/history/{training_id}/{punch_id}",
-            get(get_history)
-                .put(update_history)
-                .delete(delete_history),
+            get(get_history).put(update_history).delete(delete_history),
         )
-        .route(
-            "/trainings/{id}/history",
-            get(list_history_by_training),
-        )
+        .route("/trainings/{id}/history", get(list_history_by_training))
 }
 
 async fn list_history(
@@ -121,17 +116,15 @@ async fn delete_history(
     State(state): State<AppState>,
     Path((training_id, punch_id)): Path<(i32, i32)>,
 ) -> Result<StatusCode, StatusCode> {
-    let result = sqlx::query(
-        "DELETE FROM historial WHERE id_entrenamiento = $1 AND id_golpe = $2",
-    )
-    .bind(training_id)
-    .bind(punch_id)
-    .execute(&state.pool)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to delete history: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
-    })?;
+    let result = sqlx::query("DELETE FROM historial WHERE id_entrenamiento = $1 AND id_golpe = $2")
+        .bind(training_id)
+        .bind(punch_id)
+        .execute(&state.pool)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to delete history: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
     if result.rows_affected() == 0 {
         return Err(StatusCode::NOT_FOUND);
     }

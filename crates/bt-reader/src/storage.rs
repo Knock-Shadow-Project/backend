@@ -183,8 +183,7 @@ async fn reconnect_with_backoff(
             }
         }
     }
-    Err(last_err
-        .unwrap_or_else(|| "reconnect failed without error context".into()))
+    Err(last_err.unwrap_or_else(|| "reconnect failed without error context".into()))
 }
 
 /// Prepara las dos statements de INSERT usadas por el writer.

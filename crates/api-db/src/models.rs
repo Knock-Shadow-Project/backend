@@ -299,7 +299,7 @@ pub struct LoginResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TokenClaims {
-    pub sub: i32,      // user_id
+    pub sub: i32, // user_id
     #[serde(rename = "email")]
     pub email: String,
     pub exp: usize,

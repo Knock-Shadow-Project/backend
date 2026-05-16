@@ -1,6 +1,6 @@
 use std::env;
 use std::sync::Arc;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tracing::info;
 
 mod api;
@@ -96,13 +96,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
         loop {
             interval.tick().await;
-            let rows = sqlx::query_as::<_, (i64, String, String, String, Option<f64>, f64, String)>(
-                "SELECT id, class_name, limb, position, power, prob, detected_at
-                 FROM detected_punches WHERE id > ?1 ORDER BY id ASC"
-            )
-            .bind(last_id)
-            .fetch_all(&state_clone.db)
-            .await;
+            let rows =
+                sqlx::query_as::<_, (i64, String, String, String, Option<f64>, f64, String)>(
+                    "SELECT id, class_name, limb, position, power, prob, detected_at
+                 FROM detected_punches WHERE id > ?1 ORDER BY id ASC",
+                )
+                .bind(last_id)
+                .fetch_all(&state_clone.db)
+                .await;
 
             match rows {
                 Ok(punches) => {
