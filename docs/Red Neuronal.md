@@ -1,6 +1,23 @@
 # Red Neuronal — Documentación
 
-El módulo de **Machine Learning** clasifica los golpes de boxeo en tiempo real a partir de los datos de aceleración capturados por los sensores BLE. Consta de tres scripts principales: `pipeline.py`, `train.py` y `main.py`.
+El módulo de **Machine Learning** clasifica los golpes de boxeo en tiempo
+real a partir de los datos de aceleración capturados por los sensores BLE.
+
+Componentes principales del paquete `ml/`:
+
+| Archivo / paquete | Rol |
+|-------------------|-----|
+| `pipeline/` (paquete) | Procesamiento de señal, detección de picos, ventaneo, I/O del dataset. Antes era un `pipeline.py` monolítico de 344 líneas; tras Phase C.1 se partió en submódulos privados (`_constants.py`, `_io.py`, `_signal.py`, `_detect.py`, `_dataset.py`) y `__init__.py` re-exporta la API pública para mantener back-compat (`from pipeline import …`). |
+| `model_def.py` | Define la arquitectura `PunchCNN` (1D CNN para series temporales). |
+| `model_loader.py` | Carga compartida del modelo (`load_model()` → `LoadedModel`) usada por `main.py` y `pi_inference.py`. Lanza `ModelNotFoundError` si faltan artefactos. |
+| `train.py` | Entrenamiento del CNN sobre `data/dataset.npz` → `model/`. |
+| `main.py` | Inferencia continua **modo cloud** (lee PostgreSQL, escribe API REST / WS). Legacy. |
+| `pi_inference.py` | Inferencia continua **modo Pi offline** (lee/escribe SQLite local). |
+| `app.py` | UI Streamlit para etiquetar dataset y entrenar interactivamente. |
+| `api_client.py` / `api_models.py` | Cliente HTTP y modelos pydantic para hablar con `api-db` (modo cloud). |
+| `sync_ble_to_cloud.py` | Script one-shot: vuelca `ble_samples` desde una SQLite (de la Pi) a PostgreSQL. |
+| `logging_config.py` | Configuración global de `structlog` (logs JSON estructurados). |
+| `config.py` | Carga tipada de variables de entorno (Phase B.5). |
 
 ---
 
@@ -22,9 +39,23 @@ El módulo de **Machine Learning** clasifica los golpes de boxeo en tiempo real 
 
 ---
 
-## 1. Pipeline de datos (`pipeline.py`)
+## 1. Pipeline de datos (paquete `pipeline/`)
 
-Este módulo se encarga de la **adquisición, sincronización, filtrado y ventaneado** de las señales de los dos sensores.
+Este paquete se encarga de la **adquisición, sincronización, filtrado y
+ventaneado** de las señales de los dos sensores. Cada submódulo cabe en una
+pantalla y se testea aislado en `ml/tests/`; los consumidores siguen
+importando desde `pipeline` (`from pipeline import load_data, merge_sensors,
+detect_hits, create_windows, …`) gracias a los re-exports en `__init__.py`.
+
+Mapa de submódulos:
+
+| Submódulo | Contenido |
+|-----------|-----------|
+| `_constants.py` | `DB_PATH`, `DB_URL`, `SENSOR_MAC_*`, `SAMPLE_RATE`, `WINDOW_SIZE`, `HIT_THRESHOLD_G`, `SENSOR_SCALE`, `FEATURE_COLS`, `DEFAULT_DATASET`. |
+| `_io.py` | `load_data()` (PostgreSQL), `get_latest_sample_per_sensor()`. |
+| `_signal.py` | `lowpass_filter()`, `merge_sensors()` (sync entre sensores + filtro Butterworth + magnitud). |
+| `_detect.py` | `detect_hits()` (`scipy.signal.find_peaks`), `create_windows()`. |
+| `_dataset.py` | I/O del dataset etiquetado (`save_dataset`, `load_dataset`, `delete_samples_by_*`, `relabel_samples_by_label`, `get_recent_samples`). |
 
 ### Variables de entorno
 
@@ -152,7 +183,16 @@ torch.save({
 
 ---
 
-## 3. Inferencia (`main.py`)
+## 3. Inferencia (`main.py` — cloud, legacy)
+
+> **Estado:** en la arquitectura actual la inferencia productiva corre en la
+> Raspberry Pi (`pi_inference.py`). `main.py` se mantiene para experimentación
+> contra la base PostgreSQL de cloud y como punto de comparación durante el
+> entrenamiento.
+
+Para la versión offline-first ver
+[`docs/Pi Inference.md`](Pi%20Inference.md).
+
 
 ### `AsyncInferenceEngine`
 
@@ -216,6 +256,13 @@ python main.py [opciones]
 
 ## 4. Aplicación de etiquetado (`app.py`)
 
+> La app Streamlit puede correr **tanto en cloud** (lee/escribe `ble_samples`
+> contra PostgreSQL) **como directamente en la Raspberry Pi** (`docker-compose.pi.yaml`
+> levanta un servicio `ml-app` que monta la misma SQLite). Permite etiquetar
+> sin internet, entrenar en la Pi (lento) o exportar el dataset a un PC más
+> potente para entrenar.
+
+
 Interfaz web basada en **Streamlit** para crear y gestionar el dataset de entrenamiento.
 
 ### Funcionalidades
@@ -251,9 +298,12 @@ Interfaz web basada en **Streamlit** para crear y gestionar el dataset de entren
 | `psycopg2` | ≥2.9 | Conexión PostgreSQL |
 | `requests` | ≥2.32 | Cliente API REST |
 | `websockets` | ≥15.0 | Cliente WebSocket |
-| `streamlit` | ≥1.35 | App web de etiquetado |
-| `plotly` | ≥5.18 | Gráficos interactivos |
-| `matplotlib` / `seaborn` | ≥3.8 / ≥0.13 | Visualizaciones de entrenamiento |
+| `streamlit` | ≥1.57 | App web de etiquetado |
+| `streamlit-keyup` | ≥0.3 | Atajos de teclado en la app de etiquetado |
+| `plotly` | ≥6.7 | Gráficos interactivos |
+| `matplotlib` / `seaborn` | ≥3.10 / ≥0.13 | Visualizaciones de entrenamiento |
+| `structlog` | ≥25.4 | Logging estructurado (JSON) compartido por scripts |
+| `pydantic` | ≥2.10 | Modelos tipados (`api_models.py`) y config tipada |
 
 ---
 

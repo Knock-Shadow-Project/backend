@@ -4,28 +4,42 @@
 
 ```
 backend/
-├── Cargo.toml              # Workspace root
+├── README.md               # Project overview, quick start, doc index
+├── AGENTS.md               # This file — agent-facing notes
+├── Cargo.toml              # Workspace root (edition 2024)
 ├── crates/
 │   ├── api-db/             # REST API + WebSocket server (Axum + SQLx + PostgreSQL) — cloud
 │   ├── bt-reader/          # Bluetooth LE streamer (btleplug + tokio-postgres) — legacy
-│   └── pi-service/         # Servicio offline-first para Raspberry Pi (BLE + SQLite + API local + mDNS)
+│   └── pi-service/         # Servicio offline-first para Raspberry Pi (BLE + SQLite + API local + avahi mDNS)
 ├── docs/
-│   ├── API.md              # API documentation (English)
+│   ├── API.md              # API documentation (English + Spanish)
 │   ├── Bluetooth Streamer.md
 │   ├── Deployment.md       # Guía de despliegue cloud vs Raspberry Pi
 │   ├── Pi Inference.md     # Documentación de la CNN offline
 │   ├── Pi Service.md       # Documentación del servicio en Raspberry Pi
-│   └── Red Neuronal.md
-├── ml/                     # Python ML pipeline (PyTorch)
+│   └── Red Neuronal.md     # ML pipeline + entrenamiento
+├── ml/                     # Python ML pipeline (PyTorch, structlog, pydantic)
+│   ├── pipeline/           # Paquete: signal, detect, dataset I/O (era pipeline.py)
+│   ├── model/              # Artefactos: punch_classifier.pt, class_names.npy, norm_*.npy
+│   ├── train.py            # Entrenamiento del CNN
 │   ├── main.py             # Inferencia modo cloud (lee PostgreSQL) — legacy
-│   └── pi_inference.py     # Inferencia modo Raspberry (lee SQLite local)
-├── grafana/                # Dashboard provisioning
-├── docker-compose.yaml     # Stack cloud (DB + API + Streamlit)
-├── docker-compose.pi.yaml  # Stack Raspberry Pi offline-first
+│   ├── pi_inference.py     # Inferencia modo Raspberry (lee SQLite local)
+│   ├── app.py              # UI Streamlit para etiquetado
+│   ├── sync_ble_to_cloud.py# Script one-shot: vuelca SQLite → PostgreSQL
+│   ├── model_loader.py     # Carga compartida del modelo (cloud + Pi)
+│   ├── logging_config.py   # structlog config
+│   └── tests/              # pytest (≥30% coverage gate en CI)
+├── db/init/                # SQL de inicialización (TimescaleDB hypertables)
+├── grafana/provisioning/   # Dashboards y datasources de Grafana
+├── prometheus/             # Configuración de scrape de Prometheus
+├── docker-compose.yaml     # Stack cloud (db + api + ml-app + prom + grafana)
+├── docker-compose.pi.yaml  # Stack Raspberry Pi offline-first (pi-service + pi-inference + ml-app)
 ├── Dockerfile.api-db
 ├── Dockerfile.ble-stream   # Legacy
 ├── Dockerfile.pi-service
 ├── Dockerfile.pi-inference
+├── .github/workflows/      # CI (Rust + Python + audit + Docker build smoke)
+├── .pre-commit-config.yaml # Hooks que reflejan el CI (ruff, cargo fmt/clippy)
 └── yaak_collection.json    # Postman-like collection for API testing
 ```
 
@@ -244,7 +258,33 @@ Si prefieres entrenar en tu PC por rendimiento:
 - `bcrypt` — password hashing
 - `jsonwebtoken` — JWT creation/validation
 - `axum` — HTTP/WebSocket framework
+- `axum-prometheus` — `/metrics` endpoint and HTTP latency histograms
 - `sqlx` — async SQL with compile-time checks
-- `btleplug` — BLE abstraction
-- `mdns-sd` — mDNS service discovery
+- `btleplug` — BLE abstraction (Linux uses BlueZ via DBus)
 - `reqwest` — HTTP client for remote sync
+
+> **mDNS on the Pi is not a cargo dependency.** `pi-service` shells out to
+> `avahi-publish-service` (provided by `avahi-utils` in the runtime image)
+> and lets the host's `avahi-daemon` own UDP/5353. An in-process responder
+> would collide with the host daemon because the container runs with
+> `network_mode: host`. See `crates/pi-service/src/mdns.rs`.
+
+## CI / pre-commit
+
+GitHub Actions (`.github/workflows/ci.yml`) runs four jobs on push and PR:
+
+1. **Rust** — `cargo fmt --check`, `cargo clippy --workspace -D warnings`, `cargo test`.
+2. **Python (`ml/`)** — `ruff check`, `ruff format --check`, `mypy`, `pytest --cov` (≥30% gate).
+3. **Audit** (non-blocking) — `cargo-audit` + `pip-audit` on each `requirements_*.txt`.
+4. **Docker** — buildx smoke build for `api-db`, `pi-service`, `pi-inference`.
+
+Mirror locally with `pre-commit install && pre-commit run --all-files`.
+
+## Observability
+
+The cloud stack ships Prometheus + Grafana out of the box (see
+`docker-compose.yaml`). `api-db` exposes `/metrics` through
+`PrometheusMetricLayer`, intentionally **outside** the auth middleware so the
+scraper does not need a JWT. Grafana provisioning lives in
+`grafana/provisioning/`; default credentials are `admin/admin` (override with
+`GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD`).

@@ -49,12 +49,20 @@ Script de inferencia CNN adaptado para correr **offline** en Raspberry Pi. Lee m
 
 ### `load_model()`
 
-Carga el modelo `PunchCNN` y los parámetros de normalización desde `model/`:
+Wrapper local sobre `model_loader.load_model()` (módulo compartido entre la
+inferencia cloud y la de Pi). Carga el modelo `PunchCNN` y los parámetros de
+normalización desde `model/`:
 
 - `model/punch_classifier.pt` — pesos del modelo PyTorch
 - `model/class_names.npy` — array de nombres de clase
 - `model/norm_mean.npy` — media de normalización z-score
 - `model/norm_std.npy` — desviación estándar de normalización
+
+Si los artefactos no existen, `model_loader` lanza `ModelNotFoundError`; el
+wrapper en `pi_inference.py` lo captura, lo loguea estructuralmente con
+`logging_config.get_logger` y termina el proceso con `sys.exit(1)`. Esto
+evita que el contenedor entre en un loop de reinicio silencioso cuando el
+volumen `ml/model/` está vacío.
 
 ### `load_data_sqlite(start_time, end_time)`
 
@@ -62,6 +70,16 @@ Lee muestras BLE de ambos sensores desde la tabla `ble_samples` de SQLite.
 
 Devuelve un `DataFrame` con columnas:
 - `received_at`, `device_mac`, `x`, `y`, `z`
+
+> **Concurrencia SQLite.** El archivo `pi_data.db` es compartido por
+> `pi-service` (Rust), `pi-inference` (Python) y `ml-app` (Streamlit). Toda
+> conexión nueva abierta por `pi_inference.py` aplica `PRAGMA journal_mode=WAL`,
+> `PRAGMA busy_timeout=5000` y `PRAGMA synchronous=NORMAL` — las mismas
+> configuraciones que aplica `pi-service` al inicializar el archivo. Forzarlo
+> en cada opener es necesario porque `journal_mode=WAL` es persistente a
+> nivel de archivo pero `busy_timeout` es per-conexión, y porque
+> `pi-inference` puede arrancar antes que `pi-service` (orden de
+> `docker-compose`, reboot).
 
 ### `save_detected_punch(...)`
 
@@ -154,12 +172,31 @@ python ml/pi_inference.py --user-id 42
 
 ### Dockerfile
 
-`Dockerfile.pi-inference` está basado en `python:3.12-slim`:
+`Dockerfile.pi-inference` está basado en `python:3.12-slim` y mantiene la
+imagen lo más ligera posible para correr en una Raspberry Pi 4:
 
-1. Instala `gcc` y `g++` (necesarios para compilar dependencias de `scipy`/`numpy`).
-2. Instala dependencias Python desde `ml/requirements.txt`.
-3. Copia `pipeline.py`, `train.py`, `pi_inference.py` y el directorio `model/`.
-4. Define `DB_PATH=/data/pi_data.db`.
+1. **Sin compiladores.** No instalamos `gcc`/`g++`: `torch`, `numpy`, `scipy`
+   y `pandas` publican wheels `aarch64` precompilados. Forzar builds desde
+   código fuente solo hinchaba la imagen y aumentaba el tiempo de despliegue.
+2. **Dependencias ligeras primero** desde `ml/requirements_inference.txt`
+   (un subset del `requirements.txt` general — sin `streamlit`, `matplotlib`,
+   etc.).
+3. **PyTorch CPU-only**: instalamos `torch` desde
+   `https://download.pytorch.org/whl/cpu`. Los wheels Linux por defecto en
+   PyPI traen `nvidia-cublas` / `nvidia-cuda-runtime` / `nvidia-cudnn` y
+   pesan ~2 GB; el índice `cpu` envía un único wheel de ~200 MB sin CUDA.
+4. **Copia mínima de código.** El Dockerfile copia exactamente los módulos
+   que importa el path de inferencia: el paquete `pipeline/`, `model_def.py`,
+   `model_loader.py`, `logging_config.py`, `pi_inference.py` y el directorio
+   `model/`. `train.py` se excluye a propósito — arrastraría `matplotlib`,
+   `seaborn` y `scikit-learn`, que la inferencia nunca importa.
+
+   > **Nota:** desde Phase C.1 `pipeline` es un paquete Python (carpeta
+   > `ml/pipeline/` con submódulos `_constants.py`, `_io.py`, `_signal.py`,
+   > `_detect.py`, `_dataset.py`). Si tu Dockerfile aún hace
+   > `COPY ml/pipeline.py …` falla en build — actualízalo a
+   > `COPY ml/pipeline ./pipeline`.
+5. Define `DB_PATH=/data/pi_data.db` y `PYTHONUNBUFFERED=1`.
 
 ### Uso con docker-compose
 
@@ -224,4 +261,9 @@ En `docker-compose.pi.yaml`:
 | `scikit-learn` | ≥1.4 | Split, encoding, métricas (training) |
 | `matplotlib` / `seaborn` | ≥3.8 / ≥0.13 | Visualizaciones (training) |
 
-> `psycopg2`, `requests`, `websockets` y `streamlit` no se usan en `pi_inference.py` pero están incluidos en el `requirements.txt` compartido.
+> `psycopg2`, `requests`, `websockets` y `streamlit` no se usan en
+> `pi_inference.py`. La imagen de Pi instala únicamente
+> `requirements_inference.txt` (el subset usado por la inferencia) +
+> `torch` desde el índice CPU de PyTorch, manteniendo el image footprint
+> bajo. El `requirements.txt` completo se usa en cloud / training / la app
+> Streamlit.

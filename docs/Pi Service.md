@@ -173,11 +173,22 @@ El servidor detecta nuevas filas en `detected_punches` cada 100 ms y las retrans
 
 ### `mdns.rs` — Descubrimiento automático
 
-Usa `mdns-sd` para registrar un servicio `_knockshadow._tcp.local.`.
+Registra el servicio `_knockshadow._tcp.local.` **delegando en el `avahi-daemon`
+del host** mediante un subproceso `avahi-publish-service` que habla por DBus.
 
-- La app móvil puede descubrir la Raspberry en la red WiFi sin conocer su IP.
-- El nombre del servicio se configura con `MDNS_HOSTNAME` (default: `knockshadow-pi`).
-- Se anuncian las direcciones IPv4 no-loopback del host.
+- **No usamos un responder mDNS en el proceso** (`mdns-sd` u otros). En la
+  Raspberry corre `network_mode: host` junto al `avahi-daemon` del sistema,
+  así que cualquier socket UDP/5353 que abramos colisiona y los broadcasts se
+  pierden en silencio. Apoyarnos en avahi vía DBus evita ese choque y permite
+  reutilizar el descubrimiento ya configurado del host.
+- El contenedor monta `/var/run/dbus` desde el host (ver
+  `docker-compose.pi.yaml`) y la imagen incluye `avahi-utils`.
+- La app móvil descubre la Pi en la red WiFi sin conocer su IP.
+- El nombre del servicio se configura con `MDNS_HOSTNAME` (default:
+  `knockshadow-pi`); el record TXT se publica con `path=/` y `version=1.0`.
+- El handle devuelto por `mdns::announce()` mantiene vivo el subproceso. Al
+  dropearlo (Ctrl-C o salida del binario) se mata `avahi-publish-service` y
+  el servicio se de-registra automáticamente.
 
 ---
 
@@ -215,7 +226,9 @@ Si `API_BASE_URL` está configurado, cada 30 segundos:
 `Dockerfile.pi-service` usa multi-stage build:
 
 1. **Builder**: `rust:1.94-bookworm` con dependencias de BlueZ/D-Bus y OpenSSL.
-2. **Runtime**: `debian:bookworm-slim` con `bluez`, `libdbus-1-3`, `libssl3`.
+2. **Runtime**: `debian:bookworm-slim` con `bluez`, `libdbus-1-3`, `libssl3` y
+   `avahi-utils` (provee `avahi-publish-service`, requerido por
+   `mdns::announce`).
 
 ### docker-compose.pi.yaml
 
@@ -229,15 +242,22 @@ services:
     network_mode: host
     volumes:
       - pi-data:/data
-      - /var/run/dbus:/var/run/dbus:ro
-      - /dev/bus/usb:/dev/bus/usb
+      - /var/run/dbus:/var/run/dbus:ro       # avahi DBus socket
+      - /dev/bus/usb:/dev/bus/usb            # BLE adapter on USB hosts
     environment:
       DB_PATH: /data/pi_data.db
       DEVICE_MAC_1: DF:65:81:D0:D7:E5
       DEVICE_MAC_2: CB:01:10:3E:0D:61
 ```
 
-> **Importante:** `privileged: true` y `network_mode: host` son necesarios para que el contenedor acceda al Bluetooth del host y para que los broadcasts mDNS sean visibles en la red WiFi local.
+> **Importante:**
+> - `privileged: true` y el mount de `/dev/bus/usb` son necesarios para que
+>   `btleplug` hable con BlueZ del host.
+> - `network_mode: host` deja a `avahi-daemon` del host atender los
+>   broadcasts mDNS que llegan por la WiFi del usuario.
+> - `/var/run/dbus` montado en read-only es lo que permite a
+>   `avahi-publish-service` (dentro del contenedor) registrar el servicio en
+>   el avahi del host. Sin este mount el announce falla en silencio.
 
 ### Compilación cruzada ARM64
 
@@ -277,9 +297,12 @@ docker buildx build --platform linux/arm64 \
 | `axum` | 0.8 | HTTP + WebSocket server |
 | `tower-http` | 0.6 | CORS middleware |
 | `sqlx` | 0.8 | SQLite async con compile-time checks |
-| `mdns-sd` | 0.13 | mDNS service discovery |
 | `reqwest` | 0.12 | Cliente HTTP para sync remoto |
 | `tokio` | 1.52 | Runtime async |
 | `serde` / `serde_json` | 1 | Serialización JSON |
 | `chrono` | 0.4 | Timestamps |
-| `get_if_addrs` | 0.5 | Enumerar interfaces de red para mDNS |
+| `uuid` | 1 | IDs de eventos / requests |
+
+> mDNS no es una dependencia de cargo: lo provee el host vía `avahi-utils`
+> (`avahi-publish-service`), invocado como subproceso desde
+> `mdns::announce()`.

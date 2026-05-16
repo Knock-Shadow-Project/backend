@@ -22,6 +22,7 @@ Para obtener un token, usa el endpoint de login. El token expira tras **24 horas
 - [Login](#login)
 - [Registro](#registro)
 - [WebSocket](#websocket)
+- [Metrics](#metrics)
 - [Users](#users)
 - [Trainings](#trainings)
 - [Punches](#punches)
@@ -123,6 +124,40 @@ El servidor retransmite cualquier mensaje de texto recibido a todos los clientes
 ```bash
 npx wscat -c ws://localhost:3000/ws -H "Authorization: Bearer <token>"
 ```
+
+---
+
+## Metrics
+
+### Métricas Prometheus
+
+```
+GET /metrics
+```
+
+Endpoint expuesto por `axum-prometheus`. Devuelve el formato estándar
+text/plain con histogramas de latencia HTTP, contadores por status y por
+ruta. **No requiere autenticación** — está intencionadamente fuera del
+middleware `auth` para que el scraper de Prometheus pueda leerlo sin JWT.
+
+Si el endpoint se publica en internet, restringirlo por IP o auth básico en
+el reverse proxy (Nginx / Traefik / Caddy), nunca abriéndolo a todo el
+mundo.
+
+**Ejemplo de respuesta (truncada):**
+```
+# HELP axum_http_requests_duration_seconds Latency of HTTP requests
+# TYPE axum_http_requests_duration_seconds histogram
+axum_http_requests_duration_seconds_bucket{method="GET",path="/users",status="200",le="0.005"} 12
+…
+# HELP axum_http_requests_total Total number of HTTP requests
+# TYPE axum_http_requests_total counter
+axum_http_requests_total{method="POST",path="/login",status="200"} 4
+```
+
+Prometheus y Grafana ya vienen configurados en `docker-compose.yaml`
+(servicios `prometheus` y `grafana`); los dashboards se aprovisionan desde
+`grafana/provisioning/`.
 
 ---
 
