@@ -64,15 +64,34 @@ pub async fn init(db_path: &str) -> Result<Pool<Sqlite>, sqlx::Error> {
             endpoint TEXT NOT NULL,
             payload TEXT NOT NULL,
             headers TEXT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_attempt_at DATETIME
         );
 
         CREATE INDEX IF NOT EXISTS idx_ble_samples_time ON ble_samples(received_at);
         CREATE INDEX IF NOT EXISTS idx_punches_training ON detected_punches(local_training_id);
-        CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);",
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_created ON sync_queue(created_at);
+        CREATE INDEX IF NOT EXISTS idx_sync_queue_retry ON sync_queue(last_attempt_at, attempts);",
     )
     .execute(&pool)
     .await?;
+
+    // Migración idempotente: añadir columnas a sync_queue si la tabla existía
+    // antes de este cambio. `ALTER TABLE ADD COLUMN` falla si la columna ya
+    // existe, así que ignoramos ese error específico.
+    for stmt in [
+        "ALTER TABLE sync_queue ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE sync_queue ADD COLUMN last_attempt_at DATETIME",
+    ] {
+        if let Err(e) = sqlx::query(stmt).execute(&pool).await {
+            // SQLite devuelve "duplicate column name" si ya existe — esperado.
+            let msg = e.to_string();
+            if !msg.contains("duplicate column") {
+                return Err(e);
+            }
+        }
+    }
 
     info!("SQLite schema ready");
     Ok(pool)

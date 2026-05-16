@@ -1,0 +1,6 @@
+# Configuración compartida de rustfmt para todo el workspace.
+# Mantenemos los defaults para no divergir del estándar de la comunidad —
+# este archivo existe principalmente para fijar la edición y blindar futuros
+# cambios accidentales.
+
+edition = "2024"

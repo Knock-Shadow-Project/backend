@@ -1,0 +1,14 @@
+# Provider de dashboards para el grupo "cloud-health". Grafana cargará
+# todos los JSON de `dashboards/` al arranque.
+
+apiVersion: 1
+
+providers:
+  - name: cloud-health
+    orgId: 1
+    folder: KnockShadow
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

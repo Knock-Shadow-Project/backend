@@ -1,12 +1,12 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
 
 use crate::auth::hash_password;
-use crate::models::{CreateUsuario, UpdateUsuario, Usuario};
+use crate::models::{CreateUsuario, Pagination, UpdateUsuario, Usuario};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -18,10 +18,20 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_users(State(state): State<AppState>) -> Result<Json<Vec<Usuario>>, StatusCode> {
+async fn list_users(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<Vec<Usuario>>, StatusCode> {
+    let limit = pagination.resolved_limit();
+    let offset = pagination.resolved_offset();
     let usuarios = sqlx::query_as::<_, Usuario>(
-        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel FROM usuario",
+        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel \
+         FROM usuario \
+         ORDER BY id_usuario ASC \
+         LIMIT $1 OFFSET $2",
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {

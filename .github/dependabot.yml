@@ -1,0 +1,90 @@
+# Dependabot: monitoreo automático de versiones para todos los ecosistemas
+# del proyecto. Abre PRs cuando hay nuevas releases de dependencias.
+#
+# Política:
+#   - daily checks pero `open-pull-requests-limit: 5` por ecosistema para
+#     no saturar con docenas de PRs simultáneos.
+#   - Major updates ven labels distintos (`major-update`) para revisarse con
+#     más cuidado en el flujo de merge.
+#   - Agrupamos parches/minors por categoría para reducir ruido (1 PR semanal
+#     en vez de uno por crate).
+
+version: 2
+updates:
+  # ---- Rust workspace ----
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - rust
+    groups:
+      tracing-stack:
+        patterns:
+          - "tracing*"
+      tokio-stack:
+        patterns:
+          - "tokio*"
+      axum-stack:
+        patterns:
+          - "axum*"
+          - "tower*"
+          - "hyper*"
+      sqlx-stack:
+        patterns:
+          - "sqlx*"
+          - "tokio-postgres"
+      bluetooth-stack:
+        patterns:
+          - "btleplug*"
+          - "bluez*"
+          - "dbus*"
+
+  # ---- Python (ml/) ----
+  - package-ecosystem: pip
+    directory: /ml
+    schedule:
+      interval: weekly
+      day: monday
+      time: "08:00"
+      timezone: Europe/Madrid
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - python
+    # `requirements.txt`, `requirements_app.txt`, `requirements_inference.txt`
+    # se descubren automáticamente al estar en el `directory` listado.
+    groups:
+      torch-stack:
+        patterns:
+          - "torch*"
+          - "scikit-learn"
+      streamlit-stack:
+        patterns:
+          - "streamlit*"
+          - "plotly"
+
+  # ---- GitHub Actions ----
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - github-actions
+
+  # ---- Docker (cada Dockerfile en el repo) ----
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - docker

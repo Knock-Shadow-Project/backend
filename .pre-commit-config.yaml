@@ -1,0 +1,61 @@
+# Pre-commit hooks ejecutados localmente antes de cada commit.
+#
+# Instalar:   pre-commit install
+# Ejecutar manualmente:   pre-commit run --all-files
+#
+# Política: lo que falle aquí también debe fallar en CI (ver
+# .github/workflows/ci.yml). Pre-commit es un atajo local, NO la red de
+# seguridad — el servidor sigue siendo la autoridad final.
+
+repos:
+  # ---- Higiene básica de archivos ----
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=2000]
+      - id: detect-private-key
+
+  # ---- Python (ruff: lint + format) ----
+  # ruff sustituye a flake8 + isort + black con una sola herramienta más rápida.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff
+        args: [--fix]
+        files: ^ml/
+      - id: ruff-format
+        files: ^ml/
+
+  # ---- Rust ----
+  # `cargo fmt` y `cargo clippy` usan el toolchain instalado localmente,
+  # así que requieren `rustup component add rustfmt clippy` una vez.
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+  # ---- Detect secretos ----
+  # Catch para keys/tokens accidentales. Si dispara un falso positivo, ajustar
+  # .secrets.baseline con `detect-secrets scan > .secrets.baseline`.
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: ml/uv.lock

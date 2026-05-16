@@ -1,6 +1,6 @@
 use futures::StreamExt;
-use tokio::time::{interval, Duration};
-use tracing::{debug, info, warn};
+use tokio::time::{interval, sleep, Duration};
+use tracing::{debug, error, info, warn};
 
 use crate::bt::decode_data;
 use crate::storage::{BatteryReading, BleSample, DbWritter};
@@ -8,8 +8,13 @@ use crate::storage::{BatteryReading, BleSample, DbWritter};
 mod bt;
 mod storage;
 
+/// Initial backoff between BLE reconnection attempts.
+const BLE_BACKOFF_MIN: Duration = Duration::from_secs(2);
+/// Maximum backoff between BLE reconnection attempts.
+const BLE_BACKOFF_MAX: Duration = Duration::from_secs(60);
+
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Configura el subscriber global de tracing para ver logs en consola.
     tracing_subscriber::fmt()
         .with_max_level(if cfg!(debug_assertions) {
@@ -19,17 +24,55 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .init();
 
-    // MAC del dispositivo objetivo.
-    let mac = std::env::var("DEVICE_MAC").unwrap_or_else(|_| "DF:65:81:D0:D7:E5".to_string());
-    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-        "postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow".to_string()
-    });
+    // MAC del dispositivo objetivo — requerido por env para evitar conexiones
+    // accidentales a sensores ajenos o defaults filtrados al repo.
+    let mac = std::env::var("DEVICE_MAC").map_err(|_| {
+        "DEVICE_MAC environment variable is required (e.g. DEVICE_MAC=DF:65:81:D0:D7:E5)"
+    })?;
+    // DATABASE_URL fail-fast: arrastrar credenciales hardcodeadas como fallback
+    // es una mala práctica y deja la base de datos abierta a errores de despliegue.
+    let database_url = std::env::var("DATABASE_URL").map_err(|_| {
+        "DATABASE_URL environment variable is required (e.g. \
+         postgres://user:pass@host:5432/db)"
+    })?;
 
     // Inicializa el escritor asincrono a PostgreSQL.
     let writer = DbWritter::connect(&database_url).await?;
 
+    // Bucle de reconexión: cualquier error o cierre del stream BLE provoca un
+    // reintento con backoff exponencial en vez de matar el proceso. Esto cubre
+    // pérdidas de señal, reinicios del sensor o pausas BLE del adaptador.
+    let mut backoff = BLE_BACKOFF_MIN;
+    loop {
+        match run_session(&mac, &writer).await {
+            Ok(()) => {
+                warn!("BLE stream ended cleanly; reconnecting in {:?}", backoff);
+            }
+            Err(err) => {
+                error!("BLE session failed: {}; reconnecting in {:?}", err, backoff);
+            }
+        }
+        sleep(backoff).await;
+        // Backoff exponencial con cap; al primer éxito sostenido se reinicia
+        // dentro de run_session (ver `backoff = BLE_BACKOFF_MIN` debajo).
+        backoff = (backoff * 2).min(BLE_BACKOFF_MAX);
+        if writer.is_closed() {
+            warn!("DB writer channel closed; exiting BLE loop");
+            return Ok(());
+        }
+    }
+}
+
+/// Ejecuta una sesión completa de conexión + streaming + lectura de batería.
+///
+/// Vuelve a `Ok(())` cuando el stream BLE finaliza limpiamente; vuelve a
+/// `Err(...)` si falla la conexión, el descubrimiento o la suscripción.
+async fn run_session(
+    mac: &str,
+    writer: &DbWritter,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 1) Conexion al dispositivo BLE.
-    let (name, device) = bt::connect_device(mac.clone()).await?;
+    let (name, device) = bt::connect_device(mac.to_string()).await?;
     info!("Connected to device: {}", name);
 
     // Clonar el peripheral para la tarea de bateria.
@@ -40,10 +83,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Streaming BLE data to PostgreSQL...");
 
     // 3) Tarea de fondo: lee nivel de bateria cada 30 segundos.
+    //    Termina automáticamente al cerrar el canal del writer o al finalizar
+    //    la sesión (drop del Peripheral cuando salimos del scope).
     let writer_battery = writer.clone();
-    let mac_battery = mac.clone();
+    let mac_battery = mac.to_string();
     let name_battery = name.clone();
-    tokio::spawn(async move {
+    let battery_task = tokio::spawn(async move {
         let mut tick = interval(Duration::from_secs(30));
         loop {
             tick.tick().await;
@@ -64,6 +109,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 Err(err) => {
                     warn!("failed to read battery level: {}", err);
+                    // Si la lectura falla por desconexión, salimos del loop
+                    // para que la sesión completa pueda reiniciarse.
+                    break;
                 }
             }
         }
@@ -73,7 +121,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     while let Some(raw) = stream.next().await {
         if let Some((ble_ts, x, y, z)) = decode_data(&raw) {
             let sample = BleSample {
-                device_mac: mac.clone(),
+                device_mac: mac.to_string(),
                 device_name: name.clone(),
                 ble_ts: ble_ts.map(i32::from),
                 x,
@@ -86,5 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
+
+    // Forzamos la cancelación de la tarea de batería para no dejarla huérfana
+    // entre reconexiones (el Peripheral se descarta al volver de la función).
+    battery_task.abort();
+
     Ok(())
 }

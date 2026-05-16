@@ -7,6 +7,15 @@ import os
 
 import requests
 import websockets
+from pydantic import ValidationError
+
+from api_models import (
+    CreateHistoryPayload,
+    CreateTrainingPayload,
+    ParsedLabel,
+    Punch,
+    Training,
+)
 
 API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:3000")
 WS_URL = os.getenv("WS_URL", "ws://localhost:3000/ws")
@@ -54,22 +63,39 @@ class ApiClient:
         return data
 
     def fetch_punches(self) -> dict:
-        """Descarga la tabla PUNCH y construye un mapa de búsqueda."""
+        """Descarga la tabla PUNCH y construye un mapa de búsqueda.
+
+        Valida cada entrada de la respuesta vía `Punch` (pydantic) antes de
+        construir el mapa. Si el backend devuelve un schema inesperado
+        (campos faltantes, tipos cambiados), `ValidationError` apunta al
+        problema con el path exacto, en vez de un `KeyError` opaco más tarde.
+        """
         resp = requests.get(
             f"{self.base_url}/punches",
             headers=self._headers(),
             timeout=10,
         )
         resp.raise_for_status()
-        punches = resp.json()
-        self.punch_map = {}
-        for p in punches:
-            key = (
-                p["name"].lower(),
-                (p["limb"] or "").lower(),
-                (p["position"] or "").lower(),
+        raw = resp.json()
+        if not isinstance(raw, list):
+            raise ValueError(
+                f"GET /punches devolvió {type(raw).__name__}, se esperaba list"
             )
-            self.punch_map[key] = p["punch_id"]
+
+        self.punch_map = {}
+        for entry in raw:
+            try:
+                p = Punch.model_validate(entry)
+            except ValidationError as e:
+                # Skipping en vez de fallar: si una sola fila viene mal, no
+                # queremos romper el arranque del cliente.
+                continue
+            key = (
+                p.name.lower(),
+                (p.limb or "").lower(),
+                (p.position or "").lower(),
+            )
+            self.punch_map[key] = p.punch_id
         return self.punch_map
 
     @staticmethod
@@ -107,30 +133,42 @@ class ApiClient:
         return name, limb, position
 
     def map_prediction_to_punch(self, pred_label: str) -> int | None:
-        """Devuelve el punch_id para una etiqueta ML, o None."""
+        """Devuelve el punch_id para una etiqueta ML, o None.
+
+        Construye un `ParsedLabel` validado para garantizar que los 3
+        componentes están presentes y no vacíos antes de buscar en el mapa.
+        """
         name, limb, position = self._parse_label(pred_label)
-        key = (name.lower(), limb.lower(), position.lower())
+        try:
+            parsed = ParsedLabel(name=name, limb=limb, position=position)
+        except ValidationError:
+            return None
+        key = (parsed.name.lower(), parsed.limb.lower(), parsed.position.lower())
         return self.punch_map.get(key)
 
     def create_training(
         self, user_id: int = 1, training_type: str = "Estandar"
     ) -> dict:
-        """Crea un nuevo entrenamiento."""
-        payload = {
-            "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "end_time": None,
-            "training_type": training_type,
-            "calories": None,
-            "user_id": user_id,
-        }
+        """Crea un nuevo entrenamiento.
+
+        El payload se construye y valida con `CreateTrainingPayload` antes
+        de enviarlo. Esto adelanta errores como user_id=0 al cliente en vez
+        de obtener un 400 del servidor.
+        """
+        payload = CreateTrainingPayload(
+            user_id=user_id,
+            training_type=training_type,
+            start_time=datetime.datetime.now(datetime.timezone.utc),
+        )
         resp = requests.post(
             f"{self.base_url}/trainings",
-            json=payload,
+            json=payload.model_dump(mode="json"),
             headers=self._headers(),
             timeout=10,
         )
         resp.raise_for_status()
-        return resp.json()
+        # Validar también la respuesta para detectar contract drift cuanto antes.
+        return Training.model_validate(resp.json()).model_dump(mode="json")
 
     def finish_training(self, training_id: int) -> dict:
         """Marca la end_time de un entrenamiento."""
@@ -149,15 +187,15 @@ class ApiClient:
     def create_history(
         self, training_id: int, punch_id: int, power: float | None = None
     ) -> dict:
-        """Registra un golpe en el historial."""
-        payload = {
-            "training_id": training_id,
-            "punch_id": punch_id,
-            "power": power,
-        }
+        """Registra un golpe en el historial. Valida la carga antes de POSTear."""
+        payload = CreateHistoryPayload(
+            training_id=training_id,
+            punch_id=punch_id,
+            power=power,
+        )
         resp = requests.post(
             f"{self.base_url}/history",
-            json=payload,
+            json=payload.model_dump(mode="json"),
             headers=self._headers(),
             timeout=10,
         )

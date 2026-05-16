@@ -1,7 +1,7 @@
 [project]
 name = "ml"
 version = "0.1.0"
-description = "Add your description here"
+description = "ML pipeline para KnockShadow: training + inference + Streamlit UI."
 readme = "README.md"
 requires-python = "==3.14.*"
 dependencies = [
@@ -16,6 +16,86 @@ dependencies = [
     "seaborn>=0.13.2",
     "streamlit>=1.57.0",
     "streamlit-keyup>=0.2.4",
+    "structlog>=25.4.0",
     "torch>=2.11.0",
     "websockets>=15.0",
+]
+
+# ---------------- Ruff (lint + format) -------------------------------------
+[tool.ruff]
+# Mantenemos 100 cols: la mayoría del código actual ya cabe, y bajar a 88
+# obligaría a quebrar muchas cadenas SQL embebidas y firmas largas.
+line-length = 100
+target-version = "py314"
+exclude = [
+    "model",      # Artefactos binarios serializados.
+    "data",       # CSVs grandes.
+    "__pycache__",
+]
+
+[tool.ruff.lint]
+# Selección conservadora para empezar — luego subimos exigencia:
+#   E,F  → pyflakes + pycodestyle (errores reales).
+#   I    → isort (orden de imports).
+#   UP   → pyupgrade (sintaxis moderna).
+#   B    → bugbear (bugs comunes — mutable defaults, etc.).
+#   SIM  → simplificaciones idiomáticas.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",  # line-too-long; lo gestiona el formateador, no el lint.
+    "E402",  # module-level-import-not-at-top: Streamlit a veces lo necesita.
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests pueden usar `assert` y fixtures que el linter señalaría:
+"tests/*" = ["B011", "F841"]
+
+# ---------------- Mypy ------------------------------------------------------
+[tool.mypy]
+python_version = "3.14"
+# Empezamos laxo (la base actual no tiene anotaciones completas) y vamos
+# subiendo: cada PR que añade tipos debería poder pasar a `strict = true`
+# por módulo, no en bloque.
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+check_untyped_defs = true
+no_implicit_optional = true
+explicit_package_bases = true
+
+# ---------------- Pytest ----------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",                     # Resumen completo de fallos.
+    "--strict-markers",        # Errores por markers no declarados.
+    "--strict-config",         # Errores por opciones desconocidas en este TOML.
+]
+filterwarnings = [
+    # Streamlit y torch emiten DeprecationWarning por dependencias upstream
+    # fuera de nuestro control. Subir esto a `error` cuando upstream limpie.
+    "default::DeprecationWarning",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["."]
+omit = [
+    "tests/*",
+    "model/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+# 30% es el suelo inicial (Phase B.4). Lo subimos en cada PR.
+fail_under = 30
+show_missing = true
+skip_covered = false
+
+[dependency-groups]
+dev = [
+    "pydantic>=2.13.4",
+    "pytest>=9.0.3",
+    "structlog>=25.5.0",
 ]

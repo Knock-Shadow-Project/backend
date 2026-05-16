@@ -55,5 +55,46 @@ services:
     depends_on:
       - db
 
+  # ---------- Observability (Phase C.4) -----------------------------------
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: knockshadow-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 15 días por defecto — basta para investigar incidentes pasados sin
+      # consumir disco innecesariamente. Subir si añadimos SLO reporting.
+      - --storage.tsdb.retention.time=15d
+      - --web.enable-lifecycle
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api-db
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: knockshadow-grafana
+    restart: unless-stopped
+    environment:
+      # Login admin/admin para desarrollo local. En cualquier despliegue
+      # real reemplazar por una password generada y rotada (Vault, Doppler).
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+      - db
+
 volumes:
   db-data:
+  prometheus-data:
+  grafana-data:

@@ -1,12 +1,14 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
 
-use crate::models::{CreateGolpe, Golpe, UpdateGolpe};
+use crate::models::{CreateGolpe, Golpe, Pagination, UpdateGolpe};
 use crate::state::AppState;
+
+const GOLPE_COLUMNS: &str = "id_golpe, nombre, extremidad, posicion";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -17,8 +19,21 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_punches(State(state): State<AppState>) -> Result<Json<Vec<Golpe>>, StatusCode> {
-    let items = sqlx::query_as::<_, Golpe>("SELECT * FROM golpe")
+async fn list_punches(
+    State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
+) -> Result<Json<Vec<Golpe>>, StatusCode> {
+    // Aunque la tabla `golpe` es un catálogo pequeño hoy, mantener LIMIT/OFFSET
+    // evita sorpresas si el catálogo crece (variantes por nivel, deportes, etc.).
+    let limit = pagination.resolved_limit();
+    let offset = pagination.resolved_offset();
+    let query = format!(
+        "SELECT {cols} FROM golpe ORDER BY id_golpe ASC LIMIT $1 OFFSET $2",
+        cols = GOLPE_COLUMNS,
+    );
+    let items = sqlx::query_as::<_, Golpe>(&query)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(&state.pool)
         .await
         .map_err(|e| {

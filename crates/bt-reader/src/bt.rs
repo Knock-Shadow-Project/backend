@@ -24,7 +24,9 @@ const BATTERY_LEVEL_CHAR_UUID: &str = "00002a19-0000-1000-8000-00805f9b34fb";
 /// 2. Inicia un escaneo de dispositivos.
 /// 3. Recorre perifericos descubiertos y compara direccion MAC.
 /// 4. Si coincide, conecta (si hace falta) y devuelve el dispositivo.
-pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), Box<dyn Error>> {
+pub(crate) async fn connect_device(
+    mac: String,
+) -> Result<(String, Peripheral), Box<dyn Error + Send + Sync>> {
     info!("Connecting to device: {}", mac);
 
     // Crea el manager BLE y toma el primer adaptador disponible.
@@ -74,7 +76,7 @@ pub(crate) async fn connect_device(mac: String) -> Result<(String, Peripheral), 
 /// - Exponen la propiedad `NOTIFY`.
 pub(crate) async fn stream_data(
     device: &Peripheral,
-) -> Result<impl futures::Stream<Item = Vec<u8>>, Box<dyn Error>> {
+) -> Result<impl futures::Stream<Item = Vec<u8>>, Box<dyn Error + Send + Sync>> {
     debug!("Discovering services");
     device.discover_services().await?;
 
@@ -178,30 +180,74 @@ pub async fn read_battery_level(device: &Peripheral) -> Result<Option<u8>, btlep
 mod tests {
     use super::*;
 
+    /// Helper que lee el MAC para tests de integración desde el entorno.
+    ///
+    /// Devuelve `None` (y el test debe ser skipped) si la variable no está
+    /// definida — así `cargo test` funciona en CI sin hardware BLE, y solo se
+    /// ejecuta el camino real cuando un desarrollador exporta su sensor.
+    fn test_mac() -> Option<String> {
+        std::env::var("TEST_DEVICE_MAC").ok()
+    }
+
+    /// Prueba unitaria pura: decoder de payloads BLE.
+    #[test]
+    fn decode_data_parses_payload_with_timestamp() {
+        // ts=1, x=2, y=3, z=4 en little-endian.
+        let raw = [0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x04, 0x00];
+        let (ts, x, y, z) = decode_data(&raw).expect("valid payload should decode");
+        assert_eq!(ts, Some(1));
+        assert_eq!(x, 2.0);
+        assert_eq!(y, 3.0);
+        assert_eq!(z, 4.0);
+    }
+
+    /// Prueba unitaria pura: payload demasiado corto devuelve `None`.
+    #[test]
+    fn decode_data_rejects_short_payload() {
+        assert!(decode_data(&[]).is_none());
+        assert!(decode_data(&[0x01]).is_none());
+    }
+
     /// Prueba de integracion: verifica que se puede conectar al dispositivo de prueba.
+    /// Requiere `TEST_DEVICE_MAC=<MAC>` exportado y hardware disponible.
     #[tokio::test]
+    #[ignore = "requires real BLE hardware; set TEST_DEVICE_MAC to run"]
     async fn test_conn() {
-        let mac = "DF:65:81:D0:D7:E5".to_string();
-        info!("Starting connection test");
+        let Some(mac) = test_mac() else {
+            warn!("TEST_DEVICE_MAC not set; skipping integration test");
+            return;
+        };
+        info!("Starting connection test for {}", mac);
         let result = connect_device(mac).await;
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "connection to test device should succeed: {:?}",
+            result.err()
+        );
     }
 
     /// Prueba de integracion: verifica que se pueda abrir el stream y recibir al menos un paquete.
+    /// Requiere `TEST_DEVICE_MAC=<MAC>` exportado y hardware disponible.
     #[tokio::test]
+    #[ignore = "requires real BLE hardware; set TEST_DEVICE_MAC to run"]
     async fn test_stream() {
-        let mac = "DF:65:81:D0:D7:E5".to_string();
-        info!("Starting stream test");
-        let (_, device) = connect_device(mac).await.unwrap();
-        let stream_result = stream_data(&device).await;
-        assert!(stream_result.is_ok());
+        let Some(mac) = test_mac() else {
+            warn!("TEST_DEVICE_MAC not set; skipping integration test");
+            return;
+        };
+        info!("Starting stream test for {}", mac);
+        let (_, device) = connect_device(mac)
+            .await
+            .expect("test device should connect");
+        let mut stream = stream_data(&device)
+            .await
+            .expect("stream subscription should succeed");
 
-        let mut stream = stream_result.unwrap();
-        if let Some(data) = stream.next().await {
-            info!("Received data: {} bytes", data.len());
-            assert!(!data.is_empty());
-        } else {
-            panic!("No data received from the stream");
-        }
+        let data = stream
+            .next()
+            .await
+            .expect("expected at least one BLE notification within timeout");
+        info!("Received data: {} bytes", data.len());
+        assert!(!data.is_empty(), "BLE payload should not be empty");
     }
 }

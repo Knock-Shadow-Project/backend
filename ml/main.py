@@ -1,34 +1,25 @@
 import argparse
 import asyncio
 import datetime
-import os
 import sys
 from collections import deque
 
-import numpy as np
 import pandas as pd
 import torch
 
 from api_client import ApiClient
+from logging_config import configure_logging, get_logger
+from model_loader import ModelNotFoundError, load_model as _load_model
 from pipeline import (
     DB_URL,
-    FEATURE_COLS,
     HIT_THRESHOLD_G,
-    WINDOW_SIZE,
     create_windows,
     detect_hits,
     load_data,
     merge_sensors,
 )
-from train import PunchCNN
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
-MODEL_PATH = os.path.join(MODEL_DIR, "punch_classifier.pt")
-CLASS_NAMES_PATH = os.path.join(MODEL_DIR, "class_names.npy")
-NORM_MEAN_PATH = os.path.join(MODEL_DIR, "norm_mean.npy")
-NORM_STD_PATH = os.path.join(MODEL_DIR, "norm_std.npy")
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+log = get_logger(__name__)
 
 # Configuración del buffer circular
 POLL_INTERVAL = 1.0          # segundos entre lecturas de BD
@@ -37,29 +28,24 @@ PROCESSED_TTL = 10.0         # segundos para mantener timestamps procesados
 
 
 def load_model():
-    """Carga el modelo entrenado y los metadatos asociados."""
-    if not os.path.exists(MODEL_PATH):
-        print(f"ERROR: No se encontró el modelo en {MODEL_PATH}")
-        print("Entrena primero con: python train.py")
+    """Wrapper local del loader compartido con logging del proyecto.
+
+    Mantiene la firma legacy `(model, class_names, mean, std)` para no romper
+    el AsyncInferenceEngine. La fuente de verdad es `model_loader.load_model`.
+    """
+    try:
+        bundle = _load_model()
+    except ModelNotFoundError as e:
+        log.error("model_not_found", error=str(e))
         sys.exit(1)
 
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
-    num_classes = checkpoint["num_classes"]
-    in_channels = checkpoint.get("in_channels", len(FEATURE_COLS))
-
-    model = PunchCNN(num_classes=num_classes, in_channels=in_channels)
-    model.load_state_dict(checkpoint["model_state"])
-    model.to(DEVICE)
-    model.eval()
-
-    class_names = np.load(CLASS_NAMES_PATH, allow_pickle=True)
-    mean = np.load(NORM_MEAN_PATH)
-    std = np.load(NORM_STD_PATH)
-
-    print(f"Modelo cargado desde {MODEL_PATH}")
-    print(f"Dispositivo: {DEVICE}")
-    print(f"Clases: {class_names.tolist()}")
-    return model, class_names, mean, std
+    log.info(
+        "model_loaded",
+        device=str(bundle.device),
+        classes=bundle.class_names.tolist(),
+        num_classes=bundle.num_classes,
+    )
+    return bundle.model, bundle.class_names, bundle.mean, bundle.std
 
 
 def predict_windows(model, windows, class_names, mean, std):
@@ -67,8 +53,9 @@ def predict_windows(model, windows, class_names, mean, std):
     if len(windows) == 0:
         return []
 
+    device = next(model.parameters()).device
     X_norm = (windows - mean) / std
-    X_t = torch.from_numpy(X_norm).float().to(DEVICE)
+    X_t = torch.from_numpy(X_norm).float().to(device)
 
     with torch.no_grad():
         logits = model(X_t)
@@ -130,23 +117,21 @@ class AsyncInferenceEngine:
                     id_usuario=self.api_user_id, tipo="Estandar"
                 )
                 self.id_entrenamiento = ent["id_entrenamiento"]
-                print(f"Entrenamiento creado: ID={self.id_entrenamiento}")
+                log.info("training_created", training_id=self.id_entrenamiento)
             if self.use_ws:
                 await self.api.connect_ws()
-                print("WebSocket conectado")
-            print()
+                log.info("websocket_connected")
 
     async def run(self):
         """Arranca el productor y el consumidor concurrentemente."""
-        print(f"Inferencia continua iniciada (Ctrl+C para detener)")
-        print(f"Intervalo de lectura BD: {POLL_INTERVAL}s")
-        print(f"Buffer en memoria: {BUFFER_SECONDS}s")
-        print(f"Umbral de detección: {HIT_THRESHOLD_G} G")
-        if self.use_api:
-            print("Modo API: activado")
-        if self.use_ws:
-            print("Modo WebSocket: activado")
-        print()
+        log.info(
+            "inference_started",
+            poll_interval_s=POLL_INTERVAL,
+            buffer_seconds=BUFFER_SECONDS,
+            hit_threshold_g=HIT_THRESHOLD_G,
+            use_api=self.use_api,
+            use_ws=self.use_ws,
+        )
 
         producer = asyncio.create_task(self._producer())
         consumer = asyncio.create_task(self._consumer())
@@ -170,7 +155,10 @@ class AsyncInferenceEngine:
             try:
                 raw = await asyncio.to_thread(load_data, t_start, t_end, db_url=DB_URL)
             except Exception as e:
-                print(f"  ⚠️ Error de BD: {e}")
+                # `load_data` puede levantar psycopg2 / pandas errors; capturar
+                # genérico con stack trace para no perder visibilidad y permitir
+                # que el loop continúe.
+                log.warning("db_read_failed", error=str(e), exc_info=True)
                 continue
 
             if not raw.empty:
@@ -249,9 +237,12 @@ class AsyncInferenceEngine:
                     else str(peak_ts)
                 )
 
-                print(
-                    f"  🥊 @ {time_str} → {top['clase']} ({top['prob'] * 100:.1f}%)"
-                    f"  | Potencia: {potencia}G"
+                log.info(
+                    "punch_detected",
+                    timestamp=time_str,
+                    class_name=top["clase"],
+                    probability=round(float(top["prob"]), 4),
+                    power_g=potencia,
                 )
 
                 # Enviar por WebSocket
@@ -265,7 +256,9 @@ class AsyncInferenceEngine:
                     try:
                         await self.api.send_ws(msg)
                     except Exception as e:
-                        print(f"  ⚠️ Error WS: {e}")
+                        # WebSocket: errores de red, parsing, conexión cerrada.
+                        # No interrumpe la inferencia, sólo se pierde un mensaje.
+                        log.warning("websocket_send_failed", error=str(e), exc_info=True)
 
                 # Subir a API REST
                 if self.api and self.id_entrenamiento is not None:
@@ -276,7 +269,15 @@ class AsyncInferenceEngine:
                                 self.id_entrenamiento, id_golpe, potencia
                             )
                         except Exception as e:
-                            print(f"  ⚠️ Error API: {e}")
+                            # API REST: timeouts, 4xx/5xx, JSON malformado.
+                            # Mismo principio que WS — registrar y seguir.
+                            log.warning(
+                                "api_create_history_failed",
+                                error=str(e),
+                                training_id=self.id_entrenamiento,
+                                punch_id=id_golpe,
+                                exc_info=True,
+                            )
 
                 self._processed_peaks.add(peak_ts)
 
@@ -291,14 +292,20 @@ class AsyncInferenceEngine:
         if self.api and self.id_entrenamiento is not None:
             try:
                 self.api.finish_entrenamiento(self.id_entrenamiento)
-                print(f"Entrenamiento {self.id_entrenamiento} finalizado.")
+                log.info("training_finished", training_id=self.id_entrenamiento)
             except Exception as e:
-                print(f"Error finalizando entrenamiento: {e}")
+                log.warning(
+                    "training_finish_failed",
+                    error=str(e),
+                    training_id=self.id_entrenamiento,
+                    exc_info=True,
+                )
         if self.api and self.use_ws:
             try:
                 await self.api.close_ws()
-            except Exception:
-                pass
+            except Exception as e:
+                # Cierre del WS: aceptable fallar silenciosamente (proceso saliendo).
+                log.debug("websocket_close_failed", error=str(e))
 
 
 def main():
@@ -323,6 +330,8 @@ def main():
     )
     args = parser.parse_args()
 
+    configure_logging(service="ml_main")
+
     model, class_names, mean, std = load_model()
 
     engine = AsyncInferenceEngine(
@@ -338,7 +347,7 @@ def main():
     try:
         asyncio.run(engine.run())
     except KeyboardInterrupt:
-        print("\nInferencia detenida.")
+        log.info("inference_stopped_by_user")
 
 
 if __name__ == "__main__":

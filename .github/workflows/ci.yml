@@ -1,0 +1,195 @@
+# CI principal de KnockShadow backend.
+#
+# Estructura: dos pistas paralelas (Rust + Python) por crate/lenguaje, todas
+# bloqueantes para el merge. La pista Rust valida formato, lints y tests del
+# workspace; la pista Python valida lint, type-check y tests del paquete `ml/`.
+#
+# Caches:
+#   - cargo registry + index + build (`Swatinem/rust-cache`).
+#   - pip cache vía `actions/setup-python`.
+#
+# Por qué `cargo clippy -- -D warnings`:
+#   evita que warnings se acumulen y degraden la señal del lint. Si una crate
+#   produce warnings legítimos, anótela explícitamente con `#[allow(...)]` y
+#   un comentario, no flexibilizando esta política.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancela runs previos de la misma PR para no gastar cuota en commits superados.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------- Rust workspace ------------------------------------------
+  rust:
+    name: Rust (fmt / clippy / test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      # btleplug y dbus requieren cabeceras de sistema para compilar en Linux.
+      # Sin esto `cargo check -p pi-service` falla en CI.
+      - name: Install system deps (dbus, bluez)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libdbus-1-dev libssl-dev
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test
+        run: cargo test --workspace --all-targets
+
+  # ---------------- Python (ml/) --------------------------------------------
+  python:
+    name: Python (ruff / mypy / pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # Coincide con `requires-python = "==3.14.*"` en ml/pyproject.toml.
+          # Si bajáramos a 3.12 hay que reflejarlo allí también para evitar
+          # divergencia entre uv lock y CI.
+          python-version: '3.14'
+          cache: pip
+          cache-dependency-path: |
+            ml/requirements.txt
+            ml/requirements_app.txt
+            ml/requirements_inference.txt
+
+      # Instalación ligera: requirements.txt cubre app + pipeline + training,
+      # incluyendo torch CPU. En CI no necesitamos los wheels GPU.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff==0.14.0 mypy==1.18.2 pytest==9.0.0 pytest-cov==8.0.0
+
+      - name: ruff (lint)
+        run: ruff check .
+
+      - name: ruff (format check)
+        run: ruff format --check .
+
+      - name: mypy
+        # `--ignore-missing-imports` evita errores por stubs faltantes en
+        # paquetes científicos (pandas, scipy, torch). Cuando aterrice
+        # Phase B.5 (config tipada) podemos endurecer esto.
+        run: mypy --ignore-missing-imports --explicit-package-bases .
+
+      - name: pytest
+        run: pytest -q --cov=. --cov-report=term-missing
+
+  # ---------------- Security: dependency audit ------------------------------
+  audit:
+    name: Dependency audit (cargo-audit + pip-audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # No bloqueamos el merge por defecto: queremos visibilidad sin que un
+    # advisory upstream pare la entrega de features. Promover a required
+    # check cuando el backlog de advisories esté en 0.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          cache-targets: false
+
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit
+
+      - name: Run cargo-audit
+        run: cargo audit --deny warnings
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+
+      - name: Install pip-audit
+        run: pip install pip-audit==2.8.0
+
+      - name: Run pip-audit (requirements.txt)
+        run: pip-audit -r ml/requirements.txt
+
+      - name: Run pip-audit (requirements_app.txt)
+        run: pip-audit -r ml/requirements_app.txt
+
+      - name: Run pip-audit (requirements_inference.txt)
+        run: pip-audit -r ml/requirements_inference.txt
+
+  # ---------------- Docker build smoke --------------------------------------
+  docker:
+    name: Docker images build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Construye cada imagen para detectar regresiones en Dockerfiles
+      # (paths, etapas multi-stage, layers cacheables). No publicamos
+      # artefactos — sólo validamos la construcción.
+      - name: Build api-db
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.api-db
+          push: false
+          cache-from: type=gha,scope=api-db
+          cache-to: type=gha,mode=max,scope=api-db
+
+      - name: Build pi-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.pi-service
+          push: false
+          cache-from: type=gha,scope=pi-service
+          cache-to: type=gha,mode=max,scope=pi-service
+
+      - name: Build pi-inference
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.pi-inference
+          push: false
+          cache-from: type=gha,scope=pi-inference
+          cache-to: type=gha,mode=max,scope=pi-inference

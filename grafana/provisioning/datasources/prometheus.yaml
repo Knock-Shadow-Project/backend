@@ -1,0 +1,19 @@
+# Provisioning del datasource Prometheus para Grafana.
+#
+# Aparece junto al datasource Postgres existente; Grafana detecta ambos al
+# arranque. El UID fijo (`prom-cloud`) permite referenciarlo desde dashboards
+# JSON sin depender del nombre humano.
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    uid: prom-cloud
+    url: http://prometheus:9090
+    isDefault: false
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST

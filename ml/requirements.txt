@@ -1,16 +1,25 @@
+# Pinned for reproducible Docker builds. Versions match ml/uv.lock so local
+# development with `uv` and container builds resolve to the same wheels.
+#
+# Bumping: run `uv lock --upgrade-package <name>` and copy the new version
+# back here. Do not switch to `>=` ranges — unrelated upstream releases
+# (esp. torch/numpy/pandas) have repeatedly broken model loading.
+
 # app + pipeline
-psycopg2-binary>=2.9
-pandas>=2.0
-numpy>=1.24
-scipy>=1.11
-streamlit>=1.35
-streamlit-keyup>=0.2.4
-plotly>=5.18
-requests>=2.32
-websockets>=15.0
+psycopg2-binary==2.9.12
+pandas==3.0.2
+numpy==2.4.4
+scipy==1.17.1
+streamlit==1.57.0
+streamlit-keyup==0.3.0
+plotly==6.7.0
+requests==2.33.1
+websockets==16.0
+structlog==25.4.0
+pydantic==2.10.4
 
 # training only (tensorflow no soporta Python 3.14, usar PyTorch)
-torch>=2.9
-scikit-learn>=1.4
-matplotlib>=3.8
-seaborn>=0.13
+torch==2.11.0
+scikit-learn==1.8.0
+matplotlib==3.10.9
+seaborn==0.13.2

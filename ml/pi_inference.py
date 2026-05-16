@@ -10,23 +10,16 @@ import numpy as np
 import pandas as pd
 import torch
 
+from logging_config import configure_logging, get_logger
+from model_loader import ModelNotFoundError, load_model as _load_model
 from pipeline import (
-    FEATURE_COLS,
     HIT_THRESHOLD_G,
-    WINDOW_SIZE,
     create_windows,
     detect_hits,
     merge_sensors,
 )
-from model_def import PunchCNN
 
-MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "model")
-MODEL_PATH = os.path.join(MODEL_DIR, "punch_classifier.pt")
-CLASS_NAMES_PATH = os.path.join(MODEL_DIR, "class_names.npy")
-NORM_MEAN_PATH = os.path.join(MODEL_DIR, "norm_mean.npy")
-NORM_STD_PATH = os.path.join(MODEL_DIR, "norm_std.npy")
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+log = get_logger(__name__)
 
 POLL_INTERVAL = 1.0
 BUFFER_SECONDS = 5.0
@@ -36,48 +29,60 @@ DB_PATH = os.getenv("DB_PATH", "pi_data.db")
 SENSOR_MAC_1 = os.getenv("SENSOR_MAC_1", "DF:65:81:D0:D7:E5")
 SENSOR_MAC_2 = os.getenv("SENSOR_MAC_2", "CB:01:10:3E:0D:61")
 
-# Shared with pi-service (Rust) via Docker volume. pi-service initializes the
-# file with journal_mode=WAL; here we only need a per-connection busy_timeout
-# so concurrent writes don't hit SQLITE_BUSY immediately.
+# Shared with pi-service (Rust) via Docker volume. pi-service normally initializes
+# the file with journal_mode=WAL, pero NO podemos depender de eso: si pi-inference
+# arranca antes que pi-service (orden de docker-compose, reboot) o si pi-service
+# falla al inicializar, el archivo queda en modo rollback-journal y los writers
+# concurrentes se serializan inmediatamente.
+# Por eso configuramos WAL + busy_timeout localmente también: las PRAGMA son
+# persistentes a nivel de archivo (WAL) o de conexión (busy_timeout), aplicarlas
+# desde aquí es idempotente.
 SQLITE_TIMEOUT = 5.0
+SQLITE_BUSY_TIMEOUT_MS = 5000
 
 
 def _connect_sqlite() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH, timeout=SQLITE_TIMEOUT)
-    conn.execute("PRAGMA busy_timeout=5000")
+    # journal_mode=WAL es persistente: una vez aplicado al archivo se mantiene
+    # entre conexiones. Forzarlo aquí garantiza la propiedad incluso si
+    # pi-inference se conecta antes que pi-service.
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    # synchronous=NORMAL es el recomendado con WAL: durabilidad similar a FULL
+    # pero sin coste extra de fsync en cada commit. Igual setup que pi-service/db.rs.
+    conn.execute("PRAGMA synchronous=NORMAL")
     return conn
 
 
 def load_model():
-    if not os.path.exists(MODEL_PATH):
-        print(f"ERROR: No se encontro el modelo en {MODEL_PATH}")
+    """Wrapper local de `model_loader.load_model` con logging del proyecto.
+
+    Mantiene la firma legacy `(model, class_names, mean, std)` esperada por el
+    AsyncInferenceEngine. El loader compartido devuelve un `LoadedModel`
+    (dataclass); aquí lo desempaquetamos para no romper el resto del archivo.
+    """
+    try:
+        bundle = _load_model()
+    except ModelNotFoundError as e:
+        log.error("model_not_found", error=str(e))
         sys.exit(1)
 
-    checkpoint = torch.load(MODEL_PATH, map_location=DEVICE)
-    num_classes = checkpoint["num_classes"]
-    in_channels = checkpoint.get("in_channels", len(FEATURE_COLS))
-
-    model = PunchCNN(num_classes=num_classes, in_channels=in_channels)
-    model.load_state_dict(checkpoint["model_state"])
-    model.to(DEVICE)
-    model.eval()
-
-    class_names = np.load(CLASS_NAMES_PATH, allow_pickle=True)
-    mean = np.load(NORM_MEAN_PATH)
-    std = np.load(NORM_STD_PATH)
-
-    print(f"Modelo cargado desde {MODEL_PATH}")
-    print(f"Dispositivo: {DEVICE}")
-    print(f"Clases: {class_names.tolist()}")
-    return model, class_names, mean, std
+    log.info(
+        "model_loaded",
+        device=str(bundle.device),
+        classes=bundle.class_names.tolist(),
+        num_classes=bundle.num_classes,
+    )
+    return bundle.model, bundle.class_names, bundle.mean, bundle.std
 
 
 def predict_windows(model, windows, class_names, mean, std):
     if len(windows) == 0:
         return []
 
+    device = next(model.parameters()).device
     X_norm = (windows - mean) / std
-    X_t = torch.from_numpy(X_norm).float().to(DEVICE)
+    X_t = torch.from_numpy(X_norm).float().to(device)
 
     with torch.no_grad():
         logits = model(X_t)
@@ -202,10 +207,12 @@ class AsyncInferenceEngine:
         self._last_poll_end = datetime.datetime.now(datetime.timezone.utc)
 
     async def run(self):
-        print(f"Inferencia continua iniciada (Ctrl+C para detener)")
-        print(f"Intervalo de lectura SQLite: {POLL_INTERVAL}s")
-        print(f"Buffer en memoria: {BUFFER_SECONDS}s")
-        print(f"Umbral de deteccion: {HIT_THRESHOLD_G} G")
+        log.info(
+            "inference_started",
+            poll_interval_s=POLL_INTERVAL,
+            buffer_seconds=BUFFER_SECONDS,
+            hit_threshold_g=HIT_THRESHOLD_G,
+        )
 
         # Autodescubrir entrenamiento activo si no se proporciono
         if self.local_training_id is None:
@@ -213,10 +220,13 @@ class AsyncInferenceEngine:
             if tid is not None:
                 self.local_training_id = tid
                 self.user_id = uid
-                print(f"Entrenamiento activo detectado: id={tid}, user={uid}")
+                log.info("active_training_detected", training_id=tid, user_id=uid)
 
-        print(f"Usuario: {self.user_id} | Entrenamiento local: {self.local_training_id}")
-        print()
+        log.info(
+            "inference_context",
+            user_id=self.user_id,
+            local_training_id=self.local_training_id,
+        )
 
         producer = asyncio.create_task(self._producer())
         consumer = asyncio.create_task(self._consumer())
@@ -236,8 +246,8 @@ class AsyncInferenceEngine:
 
             try:
                 raw = await asyncio.to_thread(load_data_sqlite, t_start, t_end)
-            except Exception as e:
-                print(f"  ⚠️ Error SQLite: {e}")
+            except sqlite3.Error as e:
+                log.warning("sqlite_read_failed", error=str(e), exc_info=True)
                 continue
 
             if not raw.empty:
@@ -257,7 +267,11 @@ class AsyncInferenceEngine:
                 if tid is not None:
                     self.local_training_id = tid
                     self.user_id = uid
-                    print(f"[Auto-detect] Entrenamiento activo: id={tid}, user={uid}")
+                    log.info(
+                        "active_training_autodetected",
+                        training_id=tid,
+                        user_id=uid,
+                    )
 
             new_dfs = []
             while self._buffer:
@@ -321,9 +335,15 @@ class AsyncInferenceEngine:
 
                 name, limb, position = parse_label(top["clase"])
 
-                print(
-                    f"  🥊 @ {time_str} → {top['clase']} ({top['prob'] * 100:.1f}%)"
-                    f"  | Potencia: {potencia}G"
+                log.info(
+                    "punch_detected",
+                    timestamp=time_str,
+                    class_name=top["clase"],
+                    name=name,
+                    limb=limb,
+                    position=position,
+                    probability=round(float(top["prob"]), 4),
+                    power_g=potencia,
                 )
 
                 if self.local_training_id is not None:
@@ -337,8 +357,13 @@ class AsyncInferenceEngine:
                             potencia,
                             round(float(top["prob"]), 4),
                         )
-                    except Exception as e:
-                        print(f"  ⚠️ Error guardando en SQLite: {e}")
+                    except sqlite3.Error as e:
+                        log.warning(
+                            "sqlite_save_failed",
+                            error=str(e),
+                            training_id=self.local_training_id,
+                            exc_info=True,
+                        )
 
                 self._processed_peaks.add(peak_ts)
 
@@ -366,6 +391,8 @@ def main():
     )
     args = parser.parse_args()
 
+    configure_logging(service="pi_inference")
+
     model, class_names, mean, std = load_model()
 
     engine = AsyncInferenceEngine(
@@ -380,7 +407,7 @@ def main():
     try:
         asyncio.run(engine.run())
     except KeyboardInterrupt:
-        print("\nInferencia detenida.")
+        log.info("inference_stopped_by_user")
 
 
 if __name__ == "__main__":

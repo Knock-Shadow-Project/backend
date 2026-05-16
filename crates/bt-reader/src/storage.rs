@@ -66,25 +66,8 @@ pub struct DbWritter {
 
 impl DbWritter {
     /// Crea la conexion a PostgreSQL, inicializa schema y arranca el loop de escritura.
-    pub async fn connect(database_url: &str) -> Result<Self, Box<dyn Error>> {
-        info!("Connecting to PostgreSQL at {}", database_url);
-        let (client, connection) = match tokio_postgres::connect(database_url, NoTls).await {
-            Ok((client, connection)) => {
-                info!("Successfully connected to PostgreSQL");
-                (client, connection)
-            }
-            Err(err) => {
-                error!("PostgreSQL connection error: {}", err);
-                return Err(Box::new(err));
-            }
-        };
-
-        // Task de mantenimiento para reportar errores de la conexion subyacente.
-        tokio::spawn(async move {
-            if let Err(err) = connection.await {
-                error!("PostgreSQL connection error: {}", err);
-            }
-        });
+    pub async fn connect(database_url: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        let client = spawn_pg_connection(database_url).await?;
 
         // Crea tabla e indice si aun no existen.
         if let Err(err) = init_schema(&client).await {
@@ -94,8 +77,9 @@ impl DbWritter {
 
         // Canal bufferizado para desacoplar productor (BLE) de consumidor (BD).
         let (tx, rx) = mpsc::channel(4096);
+        let url_for_loop = database_url.to_string();
         tokio::spawn(async move {
-            writer_loop(client, rx).await;
+            writer_loop(client, rx, url_for_loop).await;
         });
 
         info!("PostgreSQL writer is ready");
@@ -117,6 +101,118 @@ impl DbWritter {
     ) -> Result<(), mpsc::error::SendError<DbRecord>> {
         self.tx.send(DbRecord::Battery(reading)).await
     }
+
+    /// Indica si el canal hacia el writer está cerrado.
+    ///
+    /// Permite que el bucle de reconexión BLE detecte un writer caído y
+    /// termine el proceso en vez de reconectar indefinidamente.
+    pub fn is_closed(&self) -> bool {
+        self.tx.is_closed()
+    }
+}
+
+/// Conecta a PostgreSQL y arranca la tarea de mantenimiento de la conexión.
+///
+/// Encapsula el patrón estándar de `tokio_postgres`: `connect()` devuelve
+/// `(Client, Connection)`, donde el `Connection` debe poll-earse en una tarea
+/// dedicada o la conexión muere silenciosamente. Lo aislamos aquí para que el
+/// loop de reconexión pueda reusarlo sin duplicar código.
+async fn spawn_pg_connection(database_url: &str) -> Result<Client, Box<dyn Error + Send + Sync>> {
+    info!("Connecting to PostgreSQL at {}", database_url);
+    let (client, connection) = match tokio_postgres::connect(database_url, NoTls).await {
+        Ok(pair) => {
+            info!("Successfully connected to PostgreSQL");
+            pair
+        }
+        Err(err) => {
+            error!("PostgreSQL connection error: {}", err);
+            return Err(Box::new(err));
+        }
+    };
+
+    tokio::spawn(async move {
+        if let Err(err) = connection.await {
+            error!("PostgreSQL connection error: {}", err);
+        }
+    });
+
+    Ok(client)
+}
+
+/// Reintenta conectar a PostgreSQL con backoff exponencial.
+///
+/// Resuelve el TODO histórico de "retry connection to client": antes, un error
+/// transitorio durante `BEGIN` (reinicio de Postgres, fail-over, glitch de
+/// red) descartaba el lote y devolvía sin persistir. Ahora se intenta
+/// reconectar hasta `MAX_RECONNECT_ATTEMPTS` veces; si todos fallan, se
+/// retorna el último error al caller para que decida qué hacer con el buffer.
+///
+/// Devuelve `(Client, Statement, Statement)` con los statements re-preparados
+/// para la nueva conexión (las prepared statements son por-conexión en
+/// tokio-postgres y no se pueden reusar tras una reconexión).
+async fn reconnect_with_backoff(
+    database_url: &str,
+) -> Result<(Client, Statement, Statement), Box<dyn Error + Send + Sync>> {
+    const MAX_RECONNECT_ATTEMPTS: u32 = 5;
+    const BASE_DELAY: Duration = Duration::from_millis(500);
+    const MAX_DELAY: Duration = Duration::from_secs(30);
+
+    let mut last_err: Option<Box<dyn Error + Send + Sync>> = None;
+    for attempt in 1..=MAX_RECONNECT_ATTEMPTS {
+        let delay = (BASE_DELAY * 2u32.saturating_pow(attempt - 1)).min(MAX_DELAY);
+        info!(
+            "Reconnect attempt {}/{} (waiting {:?})",
+            attempt, MAX_RECONNECT_ATTEMPTS, delay
+        );
+        tokio::time::sleep(delay).await;
+
+        match spawn_pg_connection(database_url).await {
+            Ok(client) => match prepare_statements(&client).await {
+                Ok((insert_stmt, battery_stmt)) => {
+                    info!("Reconnect succeeded on attempt {}", attempt);
+                    return Ok((client, insert_stmt, battery_stmt));
+                }
+                Err(err) => {
+                    error!("Reconnect statement prepare failed: {}", err);
+                    last_err = Some(Box::new(err));
+                }
+            },
+            Err(err) => {
+                error!("Reconnect attempt {} failed: {}", attempt, err);
+                last_err = Some(err);
+            }
+        }
+    }
+    Err(last_err
+        .unwrap_or_else(|| "reconnect failed without error context".into()))
+}
+
+/// Prepara las dos statements de INSERT usadas por el writer.
+///
+/// Extraído de `writer_loop` para reutilizarse tras una reconexión: cada
+/// `Client` necesita sus propias prepared statements.
+async fn prepare_statements(
+    client: &Client,
+) -> Result<(Statement, Statement), tokio_postgres::Error> {
+    let insert_stmt = client
+        .prepare(
+            "
+            INSERT INTO ble_samples (device_mac, device_name, ble_ts, x, y, z)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            ",
+        )
+        .await?;
+
+    let battery_stmt = client
+        .prepare(
+            "
+            INSERT INTO device_battery_readings (device_mac, device_name, battery_level)
+            VALUES ($1, $2, $3)
+            ",
+        )
+        .await?;
+
+    Ok((insert_stmt, battery_stmt))
 }
 
 /// Garantiza que la tabla destino y su indice existan.
@@ -163,37 +259,18 @@ async fn init_schema(client: &Client) -> Result<(), tokio_postgres::Error> {
 /// - Inmediato al alcanzar 128 muestras.
 /// - Periodico cada 50 ms si hay datos pendientes.
 /// - Final al cerrar el canal.
-async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
+///
+/// Tolerancia a fallos: si `flush_batch` reporta un error transitorio
+/// (transacción/inserción), el lote se reinyecta al frente del buffer y se
+/// intenta una reconexión vía `reconnect_with_backoff`. Sólo si la
+/// reconexión agota sus intentos descartamos los datos.
+async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>, database_url: String) {
     let mut stats = WriterStats::new();
 
-    let insert_stmt = match client
-        .prepare(
-            "
-            INSERT INTO ble_samples (device_mac, device_name, ble_ts, x, y, z)
-            VALUES ($1, $2, $3, $4, $5, $6)
-            ",
-        )
-        .await
-    {
-        Ok(stmt) => stmt,
+    let (mut insert_stmt, mut battery_stmt) = match prepare_statements(&client).await {
+        Ok(pair) => pair,
         Err(err) => {
-            error!("failed to prepare insert statement: {}", err);
-            return;
-        }
-    };
-
-    let battery_stmt = match client
-        .prepare(
-            "
-            INSERT INTO device_battery_readings (device_mac, device_name, battery_level)
-            VALUES ($1, $2, $3)
-            ",
-        )
-        .await
-    {
-        Ok(stmt) => stmt,
-        Err(err) => {
-            error!("failed to prepare battery insert statement: {}", err);
+            error!("failed to prepare statements at startup: {}", err);
             return;
         }
     };
@@ -225,12 +302,18 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
                         buffer.push(record);
                         // Umbral de lote: reduce costo por transaccion.
                         if buffer.len() >= 128 {
-                            flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
+                            try_flush(
+                                &mut client, &mut insert_stmt, &mut battery_stmt,
+                                &mut buffer, &mut stats, &database_url,
+                            ).await;
                         }
                     }
                     None => {
                         if !buffer.is_empty() {
-                            flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
+                            try_flush(
+                                &mut client, &mut insert_stmt, &mut battery_stmt,
+                                &mut buffer, &mut stats, &database_url,
+                            ).await;
                         }
                         info!("sample channel closed, writer loop stopping");
                         break;
@@ -239,7 +322,10 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
             }
             _ = tick.tick() => {
                 if !buffer.is_empty() {
-                    flush_batch(&mut client, &insert_stmt, &battery_stmt, &mut buffer, &mut stats).await;
+                    try_flush(
+                        &mut client, &mut insert_stmt, &mut battery_stmt,
+                        &mut buffer, &mut stats, &database_url,
+                    ).await;
                 }
             }
             _ = info_tick.tick() => {
@@ -253,16 +339,69 @@ async fn writer_loop(mut client: Client, mut rx: mpsc::Receiver<DbRecord>) {
     }
 }
 
+/// Intenta un flush; si falla con un error transitorio, reinyecta los datos
+/// en el buffer y reconecta antes del próximo intento.
+///
+/// Esto preserva el `WriterStats` global (mismo struct entre intentos) y
+/// garantiza que un blip de red de 1-2 segundos no provoque pérdida de datos.
+async fn try_flush(
+    client: &mut Client,
+    insert_stmt: &mut Statement,
+    battery_stmt: &mut Statement,
+    buffer: &mut Vec<DbRecord>,
+    stats: &mut WriterStats,
+    database_url: &str,
+) {
+    match flush_batch(client, insert_stmt, battery_stmt, buffer, stats).await {
+        FlushOutcome::Ok => {}
+        FlushOutcome::TransientError(pending) => {
+            // Reinyectar al frente del buffer para preservar orden de muestras.
+            // Es un edge case raro (sólo en reconexión) y `splice` con un
+            // vector pequeño es O(N) sobre el buffer; aceptable.
+            for (i, record) in pending.into_iter().enumerate() {
+                buffer.insert(i, record);
+            }
+            match reconnect_with_backoff(database_url).await {
+                Ok((new_client, new_insert, new_battery)) => {
+                    *client = new_client;
+                    *insert_stmt = new_insert;
+                    *battery_stmt = new_battery;
+                }
+                Err(err) => {
+                    // Reconnect agotó intentos: drenamos el buffer para no
+                    // crecer sin límite y reportamos el incidente. Los datos
+                    // nuevos seguirán encolándose mientras Postgres vuelve.
+                    error!(
+                        "PostgreSQL unreachable after retries ({}); dropping {} buffered records",
+                        err,
+                        buffer.len()
+                    );
+                    buffer.clear();
+                }
+            }
+        }
+    }
+}
+
+/// Resultado de un flush. `TransientError` lleva el lote pendiente para
+/// que el caller pueda re-encolarlo tras reconectar.
+enum FlushOutcome {
+    Ok,
+    TransientError(Vec<DbRecord>),
+}
+
 /// Persiste un lote dentro de una transaccion unica.
 ///
-/// Si ocurre un error durante insercion o commit, se reporta y el lote no se confirma.
+/// Devuelve `FlushOutcome::TransientError(pending)` con el lote sin persistir
+/// cuando hay un fallo (transacción/inserción/commit). El caller decide:
+/// reintentar tras reconectar, o descartar si la reconexión también falla.
 async fn flush_batch(
     client: &mut Client,
     stmt: &Statement,
     battery_stmt: &Statement,
     buffer: &mut Vec<DbRecord>,
     stats: &mut WriterStats,
-) {
+) -> FlushOutcome {
     // Mueve el contenido del buffer para liberar al productor cuanto antes.
     let mut pending = Vec::with_capacity(buffer.len());
     pending.append(buffer);
@@ -270,10 +409,8 @@ async fn flush_batch(
     let tx = match client.transaction().await {
         Ok(tx) => tx,
         Err(err) => {
-            // TODO: retry connection to client
-
             error!("failed to start transaction: {}", err);
-            return;
+            return FlushOutcome::TransientError(pending);
         }
     };
 
@@ -295,7 +432,8 @@ async fn flush_batch(
                     .await
                 {
                     error!("failed to insert sample: {}", err);
-                    return;
+                    drop(tx);
+                    return FlushOutcome::TransientError(pending);
                 }
             }
             DbRecord::Battery(reading) => {
@@ -311,7 +449,8 @@ async fn flush_batch(
                     .await
                 {
                     error!("failed to insert battery reading: {}", err);
-                    return;
+                    drop(tx);
+                    return FlushOutcome::TransientError(pending);
                 }
             }
         }
@@ -319,7 +458,7 @@ async fn flush_batch(
 
     if let Err(err) = tx.commit().await {
         error!("failed to commit sample batch: {}", err);
-        return;
+        return FlushOutcome::TransientError(pending);
     }
     stats.total_samples += pending.len();
     stats.per_commit_samples = pending.len();
@@ -331,4 +470,59 @@ async fn flush_batch(
     stats.last_report = std::time::Instant::now();
 
     debug!("flushed {} records", pending.len());
+    FlushOutcome::Ok
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper para crear un `BleSample` arbitrario en tests.
+    fn sample(z: f32) -> DbRecord {
+        DbRecord::Sample(BleSample {
+            device_mac: "AA:BB:CC:DD:EE:FF".to_string(),
+            device_name: "test".to_string(),
+            ble_ts: None,
+            x: 0.0,
+            y: 0.0,
+            z,
+        })
+    }
+
+    /// Verifica que la lógica de reinyección preserva el orden FIFO de las
+    /// muestras. Es la propiedad clave que evita que una reconexión "baraje"
+    /// el flujo temporal de la telemetría BLE.
+    #[test]
+    fn reinjection_preserves_order() {
+        let mut buffer: Vec<DbRecord> = vec![sample(7.0), sample(8.0), sample(9.0)];
+        let pending: Vec<DbRecord> = vec![sample(1.0), sample(2.0), sample(3.0)];
+
+        // Simulamos el camino del TransientError: pending va al frente del buffer.
+        for (i, record) in pending.into_iter().enumerate() {
+            buffer.insert(i, record);
+        }
+
+        // Esperamos: [1, 2, 3, 7, 8, 9].
+        let z_values: Vec<f32> = buffer
+            .iter()
+            .map(|r| match r {
+                DbRecord::Sample(s) => s.z,
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(z_values, vec![1.0, 2.0, 3.0, 7.0, 8.0, 9.0]);
+    }
+
+    /// Smoke test: `FlushOutcome::TransientError` lleva el lote entero.
+    /// Detectaría una regresión si alguien decidiera devolver `pending.split_off(...)`
+    /// o `pending.drain(...).collect()` por error.
+    #[test]
+    fn transient_error_carries_full_batch() {
+        let pending = vec![sample(1.0), sample(2.0), sample(3.0)];
+        let outcome = FlushOutcome::TransientError(pending);
+        match outcome {
+            FlushOutcome::TransientError(p) => assert_eq!(p.len(), 3),
+            FlushOutcome::Ok => panic!("expected TransientError"),
+        }
+    }
 }

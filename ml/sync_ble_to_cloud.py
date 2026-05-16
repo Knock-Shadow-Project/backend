@@ -7,7 +7,29 @@ from datetime import datetime, timezone
 import psycopg2
 from psycopg2.extras import execute_values
 
+from logging_config import configure_logging, get_logger
+
+log = get_logger(__name__)
+
 DEFAULT_BATCH = 1000
+
+# Timeout y PRAGMAs alineados con pi-service/db.rs y ml/pi_inference.py.
+# El archivo SQLite se comparte por Docker volume con 3 contenedores; abrirlo
+# sin busy_timeout cuelga inmediatamente ante SQLITE_BUSY (escrituras BLE
+# concurrentes desde pi-service). Ver memoria del proyecto: "Pi SQLite
+# concurrency - pi_data.db is shared by 3 containers; needs WAL + busy_timeout
+# on every opener".
+SQLITE_TIMEOUT_S = 5.0
+SQLITE_BUSY_TIMEOUT_MS = 5000
+
+
+def _connect_sqlite(path: str) -> sqlite3.Connection:
+    """Abre SQLite con WAL + busy_timeout. Idempotente respecto a otros openers."""
+    conn = sqlite3.connect(path, timeout=SQLITE_TIMEOUT_S)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={SQLITE_BUSY_TIMEOUT_MS}")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
 
 
 def parse_sqlite_ts(ts: str) -> datetime:
@@ -23,10 +45,10 @@ def sync(sqlite_path: str, pg_url: str, batch_size: int, dry_run: bool):
     pg_cur.execute("SELECT MAX(received_at) FROM ble_samples")
     row = pg_cur.fetchone()
     max_pg_ts = row[0] if row and row[0] else None
-    print(f"Último received_at en PostgreSQL: {max_pg_ts}")
+    log.info("postgres_last_received_at", value=str(max_pg_ts) if max_pg_ts else None)
 
-    # 2. Conectar a SQLite y leer muestras nuevas
-    sqlite_conn = sqlite3.connect(sqlite_path)
+    # 2. Conectar a SQLite (timeout + WAL) y leer muestras nuevas
+    sqlite_conn = _connect_sqlite(sqlite_path)
     sqlite_cur = sqlite_conn.cursor()
 
     if max_pg_ts:
@@ -44,10 +66,10 @@ def sync(sqlite_path: str, pg_url: str, batch_size: int, dry_run: bool):
 
     rows = sqlite_cur.fetchall()
     total = len(rows)
-    print(f"Muestras pendientes en SQLite: {total}")
+    log.info("sqlite_pending_samples", count=total)
 
     if total == 0:
-        print("Nada que sincronizar.")
+        log.info("nothing_to_sync")
         return
 
     # Convertir timestamps a datetime UTC y preparar tuplas
@@ -68,7 +90,7 @@ def sync(sqlite_path: str, pg_url: str, batch_size: int, dry_run: bool):
         )
 
     if dry_run:
-        print(f"[DRY-RUN] Se sincronizarían {total} filas.")
+        log.info("dry_run_summary", would_sync=total)
         return
 
     # 3. Insertar en PostgreSQL con ON CONFLICT DO NOTHING
@@ -84,12 +106,12 @@ def sync(sqlite_path: str, pg_url: str, batch_size: int, dry_run: bool):
         execute_values(pg_cur, insert_sql, batch, page_size=batch_size)
         pg_conn.commit()
         synced += len(batch)
-        print(f"  … sincronizadas {synced}/{total}")
+        log.info("sync_progress", synced=synced, total=total)
 
     pg_cur.close()
     pg_conn.close()
     sqlite_conn.close()
-    print(f"✅ Sincronización completa: {synced} muestras exportadas.")
+    log.info("sync_complete", total_exported=synced)
 
 
 def main():
@@ -121,6 +143,7 @@ def main():
     )
     args = parser.parse_args()
 
+    configure_logging(service="sync_ble_to_cloud")
     sync(args.sqlite, args.pg_url, args.batch_size, args.dry_run)
 
 

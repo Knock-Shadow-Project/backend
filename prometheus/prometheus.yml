@@ -1,0 +1,31 @@
+# Configuración de scraping de Prometheus para el stack cloud KnockShadow.
+#
+# Scrape interval 15s: balance estándar entre granularidad y volumen de TSDB.
+# Bajar a 5s sólo si añadimos métricas de baja cardinalidad y queremos
+# detectar incidentes rápido; subir a 30s si la retención se vuelve cara.
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+  evaluation_interval: 15s
+  external_labels:
+    environment: cloud
+
+scrape_configs:
+  # ----- api-db (Rust, axum-prometheus) -----
+  - job_name: api-db
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api-db:3000
+        labels:
+          service: api-db
+
+  # ----- Prometheus se monitoriza a sí mismo. Útil para detectar cuándo
+  # el scrape de otros targets falla (up{} == 0).
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+        labels:
+          service: prometheus

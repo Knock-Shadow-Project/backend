@@ -8,17 +8,58 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use std::sync::OnceLock;
 
 use crate::models::{CreateUsuario, LoginRequest, LoginResponse, TokenClaims, Usuario};
 use crate::state::AppState;
 
 const BEARER: &str = "Bearer ";
 
-pub fn jwt_secret() -> String {
-    std::env::var("JWT_SECRET").unwrap_or_else(|_| {
-        tracing::warn!("JWT_SECRET not set, using insecure default");
-        "knockshadow_default_secret_change_me".to_string()
-    })
+/// Minimum length required for a JWT secret (bits/8 for HS256).
+const MIN_SECRET_LEN: usize = 32;
+
+/// Holds the JWT signing secret loaded once at startup.
+///
+/// We deliberately avoid environment-variable fallbacks: an unset or weak
+/// secret in production silently breaks token verification across restarts
+/// and weakens forgery resistance, so we fail fast at boot instead.
+static JWT_SECRET: OnceLock<String> = OnceLock::new();
+
+/// Loads `JWT_SECRET` from the environment and stores it in the global cell.
+///
+/// Must be called exactly once at startup, before any handler runs.
+/// Returns an error if the variable is unset, empty, or shorter than the
+/// minimum recommended length.
+pub fn init_jwt_secret() -> Result<(), String> {
+    let secret = std::env::var("JWT_SECRET").map_err(|_| {
+        "JWT_SECRET environment variable is required but not set. \
+         Generate one with: openssl rand -hex 32"
+            .to_string()
+    })?;
+    let trimmed_len = secret.trim().len();
+    if trimmed_len == 0 {
+        return Err("JWT_SECRET must not be empty".to_string());
+    }
+    if trimmed_len < MIN_SECRET_LEN {
+        return Err(format!(
+            "JWT_SECRET must be at least {} characters (got {})",
+            MIN_SECRET_LEN, trimmed_len
+        ));
+    }
+    JWT_SECRET
+        .set(secret)
+        .map_err(|_| "JWT_SECRET already initialized".to_string())?;
+    tracing::info!("JWT secret loaded ({} bytes)", trimmed_len);
+    Ok(())
+}
+
+/// Returns the JWT signing secret loaded via [`init_jwt_secret`].
+///
+/// Panics if called before initialization — that would be a programmer error.
+pub fn jwt_secret() -> &'static str {
+    JWT_SECRET
+        .get()
+        .expect("jwt_secret() called before init_jwt_secret() — this is a bug")
 }
 
 pub fn create_token(user_id: i32, email: String) -> Result<String, jsonwebtoken::errors::Error> {
@@ -42,6 +83,41 @@ pub fn decode_token(token: &str) -> Result<TokenClaims, jsonwebtoken::errors::Er
         &Validation::default(),
     )
     .map(|data| data.claims)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Serialize tests touching the JWT_SECRET OnceLock and process env.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn init_jwt_secret_rejects_unset() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("JWT_SECRET") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("JWT_SECRET"));
+    }
+
+    #[test]
+    fn init_jwt_secret_rejects_too_short() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("JWT_SECRET", "short") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("at least"));
+        unsafe { std::env::remove_var("JWT_SECRET") };
+    }
+
+    #[test]
+    fn init_jwt_secret_rejects_empty() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("JWT_SECRET", "   ") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("empty"));
+        unsafe { std::env::remove_var("JWT_SECRET") };
+    }
 }
 
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {

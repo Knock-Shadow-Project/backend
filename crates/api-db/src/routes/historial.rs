@@ -1,11 +1,11 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::get,
     Json, Router,
 };
 
-use crate::models::{CreateHistorial, Historial, HistorialDetail, UpdateHistorial};
+use crate::models::{CreateHistorial, Historial, HistorialDetail, Pagination, UpdateHistorial};
 use crate::state::AppState;
 
 pub fn routes() -> Router<AppState> {
@@ -25,12 +25,21 @@ pub fn routes() -> Router<AppState> {
 
 async fn list_history(
     State(state): State<AppState>,
+    Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<HistorialDetail>>, StatusCode> {
+    // historial puede crecer ilimitadamente (1 fila por golpe registrado).
+    // Pagar página por página evita devolver megabytes en un solo endpoint.
+    let limit = pagination.resolved_limit();
+    let offset = pagination.resolved_offset();
     let items = sqlx::query_as::<_, HistorialDetail>(
         "SELECT h.id_entrenamiento, h.id_golpe, h.potencia, g.nombre, g.extremidad, g.posicion
          FROM historial h
-         JOIN golpe g ON h.id_golpe = g.id_golpe",
+         JOIN golpe g ON h.id_golpe = g.id_golpe
+         ORDER BY h.id_entrenamiento DESC, h.id_golpe ASC
+         LIMIT $1 OFFSET $2",
     )
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {
@@ -132,14 +141,21 @@ async fn delete_history(
 async fn list_history_by_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
+    Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<HistorialDetail>>, StatusCode> {
+    let limit = pagination.resolved_limit();
+    let offset = pagination.resolved_offset();
     let items = sqlx::query_as::<_, HistorialDetail>(
         "SELECT h.id_entrenamiento, h.id_golpe, h.potencia, g.nombre, g.extremidad, g.posicion
          FROM historial h
          JOIN golpe g ON h.id_golpe = g.id_golpe
-         WHERE h.id_entrenamiento = $1",
+         WHERE h.id_entrenamiento = $1
+         ORDER BY h.id_golpe ASC
+         LIMIT $2 OFFSET $3",
     )
     .bind(id)
+    .bind(limit)
+    .bind(offset)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| {

@@ -243,6 +243,39 @@ pub struct HistorialDetail {
     pub position: Option<String>,
 }
 
+// Pagination -----------------------------------------------------------------
+
+/// Pagination defaults applied across list endpoints.
+///
+/// 50 strikes a balance between mobile clients (smaller payloads, snappier
+/// scroll) and admin tooling (need enough rows on a page). The 200 cap prevents
+/// `?limit=10000000` from turning into a memory exhaustion vector.
+pub const DEFAULT_PAGE_SIZE: i64 = 50;
+pub const MAX_PAGE_SIZE: i64 = 200;
+
+/// Query parameters parsed by all paginated list endpoints (`?limit=…&offset=…`).
+#[derive(Debug, Deserialize)]
+pub struct Pagination {
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
+}
+
+impl Pagination {
+    /// Returns the limit clamped to `[1, MAX_PAGE_SIZE]` with `DEFAULT_PAGE_SIZE` as fallback.
+    pub fn resolved_limit(&self) -> i64 {
+        self.limit
+            .unwrap_or(DEFAULT_PAGE_SIZE)
+            .clamp(1, MAX_PAGE_SIZE)
+    }
+
+    /// Returns the offset clamped to `>= 0`, defaulting to 0.
+    pub fn resolved_offset(&self) -> i64 {
+        self.offset.unwrap_or(0).max(0)
+    }
+}
+
 // Auth models ---------------------------------------------------------------
 
 #[derive(Debug, Deserialize)]
