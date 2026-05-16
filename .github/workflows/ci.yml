@@ -162,7 +162,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       # Construye cada imagen para detectar regresiones en Dockerfiles
       # (paths, etapas multi-stage, layers cacheables). No publicamos
