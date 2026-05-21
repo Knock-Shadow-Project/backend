@@ -141,6 +141,117 @@ class TestMergeSensors:
         assert "mag1" in merged.columns
         assert "mag2" in merged.columns
 
+    def test_does_not_raise_when_mixing_truncated_and_ms_timestamps(self):
+        """Regresión: una consulta puede solapar datos viejos (segundo entero,
+        pre-fix de `pi-service`) y nuevos (ms). Si el spread del grupo viejo
+        empuja timestamps por delante de los nuevos vecinos sin re-sort,
+        `merge_asof` rompe con 'left keys must be sorted'.
+        """
+        # Sensor 1: grupo viejo de 50 muestras todas en 12:00:00, luego una
+        # muestra "nueva" con ms en 12:00:00.100, luego otro grupo viejo.
+        old = pd.Timestamp("2026-05-16 12:00:00")
+        new_in_middle = pd.Timestamp("2026-05-16 12:00:00.100")
+        next_old = pd.Timestamp("2026-05-16 12:00:01")
+        rows = []
+        for _ in range(50):
+            rows.append(
+                {
+                    "received_at": old,
+                    "device_mac": pipeline.SENSOR_MAC_1,
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                }
+            )
+        rows.append(
+            {
+                "received_at": new_in_middle,
+                "device_mac": pipeline.SENSOR_MAC_1,
+                "x": 1.0,
+                "y": 0.0,
+                "z": 0.0,
+            }
+        )
+        for _ in range(50):
+            rows.append(
+                {
+                    "received_at": next_old,
+                    "device_mac": pipeline.SENSOR_MAC_1,
+                    "x": 1.0,
+                    "y": 0.0,
+                    "z": 0.0,
+                }
+            )
+        # Sensor 2 análogo, igual de denso.
+        for _ in range(50):
+            rows.append(
+                {
+                    "received_at": old,
+                    "device_mac": pipeline.SENSOR_MAC_2,
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0,
+                }
+            )
+        for _ in range(50):
+            rows.append(
+                {
+                    "received_at": next_old,
+                    "device_mac": pipeline.SENSOR_MAC_2,
+                    "x": 0.0,
+                    "y": 1.0,
+                    "z": 0.0,
+                }
+            )
+        # Antes del fix esto levantaba ValueError("left keys must be sorted").
+        merged = merge_sensors(pd.DataFrame(rows))
+        assert not merged.empty
+        # Y received_at del resultado queda monotónico.
+        ts = merged["received_at"]
+        assert ts.is_monotonic_increasing, "merge_sensors no devuelve filas ordenadas"
+
+    def test_preserves_sub_second_variation_with_truncated_timestamps(self):
+        """Regresión del bug del Sensor 2 (commit del fix received_at).
+
+        Cuando los datos viejos venían de SQLite con `received_at` truncado
+        al segundo, las ~50 muestras/s caían en el mismo timestamp y
+        `merge_asof` emparejaba TODAS las filas del Sensor 1 con UNA sola
+        muestra del Sensor 2 (meseta plana en el plot). El spread interno
+        debe preservar la variación intra-segundo de ambos sensores.
+        """
+        n = 50  # típico ~50 Hz en 1 s
+        # TODAS las muestras del mismo segundo: simula el bug original.
+        same_second = pd.Timestamp("2026-05-16 12:00:00")
+        rows = []
+        for i in range(n):
+            # Sensor 1: oscilación clara muestra-a-muestra
+            rows.append(
+                {
+                    "received_at": same_second,
+                    "device_mac": pipeline.SENSOR_MAC_1,
+                    "x": float(i % 5),
+                    "y": 0.0,
+                    "z": -1000.0,
+                }
+            )
+            # Sensor 2: también con variación clara
+            rows.append(
+                {
+                    "received_at": same_second,
+                    "device_mac": pipeline.SENSOR_MAC_2,
+                    "x": float(i),  # 0, 1, 2, ..., 49 — rampa monótona
+                    "y": 0.0,
+                    "z": 1000.0,
+                }
+            )
+        merged = merge_sensors(pd.DataFrame(rows))
+        # Sin el spread, x2 sería constante (meseta). Con el spread, debe
+        # variar — y notablemente, no todas las filas tienen el mismo x2.
+        assert len(merged) >= n - 5, "demasiadas filas descartadas por merge_asof"
+        assert merged["x2"].nunique() > 1, (
+            "Sensor 2 colapsado a un solo valor — el spread no se aplicó"
+        )
+
 
 @pytest.mark.parametrize(
     "window_size",

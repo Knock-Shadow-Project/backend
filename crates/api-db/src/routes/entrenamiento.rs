@@ -15,8 +15,9 @@ use crate::state::AppState;
 ///      no las exponemos accidentalmente al cliente.
 ///   2. El planner puede usar índices de cobertura cuando las columnas son
 ///      conocidas en tiempo de compilación.
-const ENTRENAMIENTO_COLUMNS: &str =
-    "id_entrenamiento, hora_inicio, hora_fin, tipo, calorias, id_usuario";
+///
+/// Tras la migración 002 incluimos `id_rutina`, `paso_actual` y `estado`.
+const ENTRENAMIENTO_COLUMNS: &str = "id_entrenamiento, id_usuario, id_rutina, hora_inicio, hora_fin, tipo, calorias, paso_actual, estado";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
@@ -80,18 +81,33 @@ async fn create_training(
     State(state): State<AppState>,
     Json(payload): Json<CreateEntrenamiento>,
 ) -> Result<Json<Entrenamiento>, StatusCode> {
+    // Cuando el cliente no manda start_time/calories/paso_actual/estado, dejamos
+    // que PostgreSQL aplique los DEFAULT definidos en el esquema (CURRENT_TIMESTAMP,
+    // 0, 'ACTIVO'). Usamos COALESCE para preservar esos defaults frente a NULLs.
     let query = format!(
-        "INSERT INTO entrenamiento (hora_inicio, hora_fin, tipo, calorias, id_usuario)
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO entrenamiento (id_usuario, id_rutina, hora_inicio, hora_fin, tipo, calorias, paso_actual, estado)
+         VALUES (
+            $1,
+            $2,
+            COALESCE($3, CURRENT_TIMESTAMP),
+            $4,
+            $5,
+            COALESCE($6, 0),
+            COALESCE($7, 0),
+            COALESCE($8, 'ACTIVO')
+         )
          RETURNING {cols}",
         cols = ENTRENAMIENTO_COLUMNS,
     );
     let item = sqlx::query_as::<_, Entrenamiento>(&query)
+        .bind(payload.user_id)
+        .bind(payload.routine_id)
         .bind(payload.start_time)
         .bind(payload.end_time)
         .bind(&payload.training_type)
         .bind(payload.calories)
-        .bind(payload.user_id)
+        .bind(payload.current_step)
+        .bind(&payload.state)
         .fetch_one(&state.pool)
         .await
         .map_err(|e| {
@@ -108,21 +124,27 @@ async fn update_training(
 ) -> Result<Json<Entrenamiento>, StatusCode> {
     let query = format!(
         "UPDATE entrenamiento SET
-            hora_inicio = COALESCE($1, hora_inicio),
-            hora_fin = COALESCE($2, hora_fin),
-            tipo = COALESCE($3, tipo),
-            calorias = COALESCE($4, calorias),
-            id_usuario = COALESCE($5, id_usuario)
-         WHERE id_entrenamiento = $6
+            id_usuario = COALESCE($1, id_usuario),
+            id_rutina = COALESCE($2, id_rutina),
+            hora_inicio = COALESCE($3, hora_inicio),
+            hora_fin = COALESCE($4, hora_fin),
+            tipo = COALESCE($5, tipo),
+            calorias = COALESCE($6, calorias),
+            paso_actual = COALESCE($7, paso_actual),
+            estado = COALESCE($8, estado)
+         WHERE id_entrenamiento = $9
          RETURNING {cols}",
         cols = ENTRENAMIENTO_COLUMNS,
     );
     let item = sqlx::query_as::<_, Entrenamiento>(&query)
+        .bind(payload.user_id)
+        .bind(payload.routine_id)
         .bind(payload.start_time)
         .bind(payload.end_time)
         .bind(&payload.training_type)
         .bind(payload.calories)
-        .bind(payload.user_id)
+        .bind(payload.current_step)
+        .bind(&payload.state)
         .bind(id)
         .fetch_one(&state.pool)
         .await

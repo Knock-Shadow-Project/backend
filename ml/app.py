@@ -9,7 +9,6 @@ from st_keyup import st_keyup
 from pipeline import (
     DEFAULT_DATASET,
     FEATURE_COLS,
-    HIT_THRESHOLD_G,
     SENSOR_MAC_1,
     SENSOR_MAC_2,
     create_windows,
@@ -60,6 +59,12 @@ POSITION_SHORTCUTS = {
 
 
 def init_session():
+    # Umbral por defecto para el slider de detección. Distinto y más bajo que
+    # HIT_THRESHOLD_G (el del backend de inferencia/entrenamiento) a propósito:
+    # la herramienta de etiquetado quiere ver TODO impacto candidato para que
+    # el humano decida, mientras que la inferencia online prefiere ser más
+    # restrictiva. Mantenerlos desacoplados evita que tocar uno mueva el otro.
+    DEFAULT_SLIDER_THRESHOLD = 1.2
     defaults = {
         "recording": False,
         "start_time": None,
@@ -67,8 +72,8 @@ def init_session():
         "merged_df": None,
         "peaks": None,
         "windows": None,
-        "threshold": HIT_THRESHOLD_G,
-        "last_threshold": HIT_THRESHOLD_G,
+        "threshold": DEFAULT_SLIDER_THRESHOLD,
+        "last_threshold": DEFAULT_SLIDER_THRESHOLD,
         "default_punch": PUNCH_TYPES[0],
         "default_position": POSITIONS[0],
         "last_key": "",
@@ -224,12 +229,18 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Configuración")
+    # Rango y paso pensados para etiquetado de impactos suaves a fuertes:
+    # 0.5–5.0 G cubre desde toques flojos hasta ganchos sólidos sin saturar
+    # el slider con valores irrelevantes (>5 G casi nunca filtra nada útil
+    # porque la mayoría de impactos legítimos caen por debajo). Paso de 0.1
+    # para ajuste fino.
     new_threshold = st.slider(
         "Umbral de detección (G)",
-        min_value=1.0,
-        max_value=20.0,
+        min_value=0.5,
+        max_value=5.0,
         value=float(st.session_state.threshold),
-        step=0.5,
+        step=0.1,
+        format="%.1f",
         help="Magnitud mínima en G para considerar un golpe",
     )
     if new_threshold != st.session_state.last_threshold:
@@ -245,6 +256,12 @@ with st.sidebar:
             )
             st.session_state.peaks = valid_peaks
             st.session_state.windows = windows
+            # El número de golpes cambia → fuerza reconstrucción de hits_df y
+            # limpia el estado del data_editor para que no reaplique ediciones
+            # antiguas sobre filas que ya no existen.
+            st.session_state.hits_dirty = True
+            for _k in ("hits_df", "hits_editor"):
+                st.session_state.pop(_k, None)
 
     st.caption(f"Sensor 1: `{SENSOR_MAC_1}`")
     st.caption(f"Sensor 2: `{SENSOR_MAC_2}`")
@@ -263,6 +280,13 @@ with col_control:
             st.session_state.merged_df = None
             st.session_state.peaks = None
             st.session_state.windows = None
+            # Invalida la tabla de golpes de la grabación anterior: si no, al
+            # extraer las nuevas ventanas `hits_df` conservaría las filas viejas
+            # (con `golpe` apuntando a índices que ya no existen en `windows`)
+            # y al guardar petaría con IndexError.
+            st.session_state.hits_dirty = True
+            for _k in ("hits_df", "hits_editor"):
+                st.session_state.pop(_k, None)
             st.rerun()
     else:
         if st.button("Iniciar grabación", type="primary", use_container_width=True):
@@ -272,6 +296,11 @@ with col_control:
             st.session_state.merged_df = None
             st.session_state.peaks = None
             st.session_state.windows = None
+            # Misma invalidación que en "Detener" — empezar una nueva grabación
+            # debe descartar los golpes etiquetados anteriormente.
+            st.session_state.hits_dirty = True
+            for _k in ("hits_df", "hits_editor"):
+                st.session_state.pop(_k, None)
             st.rerun()
 
     if st.session_state.start_time and st.session_state.end_time:
@@ -455,9 +484,24 @@ with col_viz:
                 st.divider()
                 st.subheader(f"Golpes detectados: {len(windows)}")
 
-                # Build editable dataframe for each hit
-                if "hits_df" not in st.session_state or st.session_state.get(
-                    "hits_dirty", True
+                # ---- Construye hits_df una sola vez por grabación ----
+                # La columna `etiqueta` derivada se calcula bajo demanda fuera
+                # del data_editor: meterla dentro creaba un lag de un rerun
+                # (cambiabas "tipo" y la etiqueta seguía mostrando el valor
+                # anterior hasta que volvías a interactuar), que daba la falsa
+                # sensación de que la selección no se aplicaba.
+                # Defensa en profundidad: si por cualquier motivo `hits_df`
+                # quedó desincronizado con `windows` (p. ej. un flujo nuevo que
+                # olvide poner hits_dirty=True), reconstruye en vez de dejar
+                # que `windows[indices]` reviente al guardar.
+                _existing_hits = st.session_state.get("hits_df")
+                _hits_len_mismatch = (
+                    _existing_hits is not None and len(_existing_hits) != len(windows)
+                )
+                if (
+                    "hits_df" not in st.session_state
+                    or st.session_state.get("hits_dirty", True)
+                    or _hits_len_mismatch
                 ):
                     hits_data = []
                     for i in range(len(windows)):
@@ -484,24 +528,106 @@ with col_viz:
                         )
                     st.session_state.hits_df = pd.DataFrame(hits_data)
                     st.session_state.hits_dirty = False
+                    # Imprescindible: si quedaba widget-state de una grabación
+                    # anterior, Streamlit lo aplicaría sobre los nuevos golpes
+                    # y reescribiría filas que el usuario no había tocado.
+                    st.session_state.pop("hits_editor", None)
 
-                df_editable = st.session_state.hits_df.copy()
-                df_editable["etiqueta"] = (
-                    df_editable["tipo"] + "_" + df_editable["posicion"]
+                def _sync_hits_editor() -> None:
+                    """Aplica las ediciones del widget a hits_df.
+
+                    Se llama tanto como `on_change` (antes del rerun, para que
+                    el resto del script vea los cambios inmediatamente) como
+                    de forma defensiva justo después de `st.data_editor` por
+                    si on_change no se disparase en algún caso límite.
+                    """
+                    state = st.session_state.get("hits_editor")
+                    if not state:
+                        return
+                    df = st.session_state.hits_df
+                    for row_idx, changes in state.get("edited_rows", {}).items():
+                        try:
+                            ri = int(row_idx)
+                        except (TypeError, ValueError):
+                            continue
+                        if 0 <= ri < len(df):
+                            for col, val in changes.items():
+                                if col in df.columns:
+                                    df.at[ri, col] = val
+                    st.session_state.hits_df = df
+
+                # ---- Barra de acciones masivas ----
+                st.markdown(
+                    "**Acciones rápidas** — aplica a TODOS los golpes a la vez:"
                 )
+                bcols = st.columns([1.4, 1.4, 1, 1, 1])
+                with bcols[0]:
+                    bulk_tipo = st.selectbox(
+                        "Tipo masivo",
+                        PUNCH_TYPES,
+                        index=PUNCH_TYPES.index(st.session_state.default_punch),
+                        key="bulk_tipo_select",
+                        label_visibility="collapsed",
+                    )
+                with bcols[1]:
+                    bulk_pos = st.selectbox(
+                        "Posición masiva",
+                        POSITIONS,
+                        index=POSITIONS.index(st.session_state.default_position),
+                        key="bulk_pos_select",
+                        label_visibility="collapsed",
+                    )
+                with bcols[2]:
+                    if st.button(
+                        "Aplicar tipo",
+                        use_container_width=True,
+                        help="Asigna ese tipo a TODOS los golpes",
+                    ):
+                        st.session_state.hits_df["tipo"] = bulk_tipo
+                        st.session_state.pop("hits_editor", None)
+                        st.rerun()
+                with bcols[3]:
+                    if st.button(
+                        "Aplicar pos.",
+                        use_container_width=True,
+                        help="Asigna esa posición a TODOS los golpes",
+                    ):
+                        st.session_state.hits_df["posicion"] = bulk_pos
+                        st.session_state.pop("hits_editor", None)
+                        st.rerun()
+                with bcols[4]:
+                    if st.button(
+                        "Invertir sel.",
+                        use_container_width=True,
+                        help="Invierte qué golpes están marcados para guardar",
+                    ):
+                        st.session_state.hits_df["guardar"] = ~st.session_state.hits_df[
+                            "guardar"
+                        ].astype(bool)
+                        st.session_state.pop("hits_editor", None)
+                        st.rerun()
 
-                edited_df = st.data_editor(
-                    df_editable,
+                # ---- Editor por fila ----
+                # OJO: pasamos una copia para que el widget no muta hits_df
+                # directamente; las ediciones se aplican vía _sync_hits_editor.
+                st.data_editor(
+                    st.session_state.hits_df.copy(),
                     column_config={
                         "guardar": st.column_config.CheckboxColumn(
-                            "Guardar", help="Marca para guardar este golpe"
+                            "✓",
+                            help="Marca para guardar este golpe",
+                            width="small",
                         ),
-                        "golpe": st.column_config.NumberColumn("Golpe #", disabled=True),
+                        "golpe": st.column_config.NumberColumn(
+                            "#", disabled=True, width="small"
+                        ),
                         "tiempo": st.column_config.TextColumn(
-                            "Tiempo", disabled=True, help="Momento aproximado del pico"
+                            "Tiempo",
+                            disabled=True,
+                            help="Momento aproximado del pico",
                         ),
                         "pico_mag": st.column_config.NumberColumn(
-                            "Pico mag (G)", disabled=True
+                            "Pico (G)", disabled=True, format="%.2f"
                         ),
                         "tipo": st.column_config.SelectboxColumn(
                             "Tipo", options=PUNCH_TYPES, required=True
@@ -509,27 +635,115 @@ with col_viz:
                         "posicion": st.column_config.SelectboxColumn(
                             "Posición", options=POSITIONS, required=True
                         ),
-                        "etiqueta": st.column_config.TextColumn(
-                            "Etiqueta final", disabled=True
-                        ),
                     },
                     hide_index=True,
                     use_container_width=True,
                     key="hits_editor",
+                    on_change=_sync_hits_editor,
                 )
+                # Defensa por si on_change no se disparase (cambios programáticos).
+                _sync_hits_editor()
 
-                # Persist user edits (recalculate label) so changes survive reruns
-                if edited_df is not None and not edited_df.empty:
-                    edited_df["etiqueta"] = (
-                        edited_df["tipo"] + "_" + edited_df["posicion"]
+                current = st.session_state.hits_df
+                current_labels = (
+                    current["tipo"].astype(str) + "_" + current["posicion"].astype(str)
+                )
+                to_save_mask = current["guardar"].astype(bool)
+                n_selected = int(to_save_mask.sum())
+
+                # ---- Resumen vivo por etiqueta (chips de colores) ----
+                counts = current_labels[to_save_mask].value_counts()
+                if len(counts) > 0:
+                    palette = [
+                        "#1f77b4",
+                        "#ff7f0e",
+                        "#2ca02c",
+                        "#d62728",
+                        "#9467bd",
+                        "#8c564b",
+                        "#e377c2",
+                        "#7f7f7f",
+                        "#bcbd22",
+                        "#17becf",
+                    ]
+                    chips_html = []
+                    for i, label in enumerate(counts.index):
+                        color = palette[i % len(palette)]
+                        chips_html.append(
+                            f'<span style="background:{color};color:#fff;'
+                            "padding:3px 10px;border-radius:12px;margin:2px;"
+                            'display:inline-block;font-size:0.85rem;'
+                            f'font-weight:600;">{label} · {int(counts[label])}</span>'
+                        )
+                    st.markdown(
+                        '<div style="margin:6px 0 12px 0;">'
+                        + "".join(chips_html)
+                        + "</div>",
+                        unsafe_allow_html=True,
                     )
-                    st.session_state.hits_df = edited_df.copy()
 
-                n_selected = (
-                    int(edited_df["guardar"].sum())
-                    if "guardar" in edited_df.columns
-                    else 0
-                )
+                # ---- Inspector de golpe individual ----
+                with st.expander(
+                    f"🔍 Inspeccionar un golpe ({len(windows)} disponibles)",
+                    expanded=False,
+                ):
+                    inspect_n = st.number_input(
+                        "Número de golpe",
+                        min_value=1,
+                        max_value=int(len(windows)),
+                        value=1,
+                        step=1,
+                        key="hit_inspector_idx",
+                    )
+                    idx_i = int(inspect_n) - 1
+                    if 0 <= idx_i < len(windows):
+                        w = windows[idx_i]
+                        fig_i = make_subplots(
+                            rows=2,
+                            cols=1,
+                            shared_xaxes=True,
+                            subplot_titles=("Sensor 1", "Sensor 2"),
+                            vertical_spacing=0.12,
+                        )
+                        for ax_i, color, name in [
+                            (0, "#1f77b4", "x1"),
+                            (1, "#2ca02c", "y1"),
+                            (2, "#d62728", "z1"),
+                        ]:
+                            fig_i.add_trace(
+                                go.Scatter(
+                                    y=w[:, ax_i],
+                                    name=name,
+                                    line=dict(color=color, width=1.5),
+                                ),
+                                row=1,
+                                col=1,
+                            )
+                        for ax_i, color, name in [
+                            (3, "#9467bd", "x2"),
+                            (4, "#8c564b", "y2"),
+                            (5, "#e377c2", "z2"),
+                        ]:
+                            fig_i.add_trace(
+                                go.Scatter(
+                                    y=w[:, ax_i],
+                                    name=name,
+                                    line=dict(color=color, width=1.5),
+                                ),
+                                row=2,
+                                col=1,
+                            )
+                        fig_i.update_layout(
+                            height=320, margin=dict(t=40, b=10), showlegend=True
+                        )
+                        st.plotly_chart(fig_i, use_container_width=True)
+                        row_i = current.iloc[idx_i]
+                        flag = "✓ se guardará" if bool(row_i["guardar"]) else "✗ NO se guardará"
+                        st.caption(
+                            f"Etiqueta: **{row_i['tipo']}_{row_i['posicion']}** · "
+                            f"Pico: **{row_i['pico_mag']} G** · {flag}"
+                        )
+
                 st.metric("Golpes seleccionados para guardar", n_selected)
 
                 if st.button(
@@ -538,10 +752,14 @@ with col_viz:
                     use_container_width=True,
                     disabled=(n_selected == 0),
                 ):
-                    selected = edited_df[edited_df["guardar"] == True]
+                    selected = current[to_save_mask]
                     indices = selected["golpe"].values.astype(int) - 1
                     X_to_save = windows[indices]
-                    y_to_save = selected["etiqueta"].values.astype(str)
+                    y_to_save = (
+                        selected["tipo"].astype(str)
+                        + "_"
+                        + selected["posicion"].astype(str)
+                    ).values.astype(str)
                     total, _ = save_dataset(X_to_save, y_to_save)
                     st.success(
                         f"Guardadas {n_selected} muestra(s) — total en dataset: {total}"
@@ -552,8 +770,8 @@ with col_viz:
                     st.session_state.peaks = None
                     st.session_state.windows = None
                     st.session_state.hits_dirty = True
-                    if "hits_df" in st.session_state:
-                        del st.session_state.hits_df
+                    for _k in ("hits_df", "hits_editor"):
+                        st.session_state.pop(_k, None)
                     st.rerun()
 
                 if st.button(
@@ -566,6 +784,6 @@ with col_viz:
                     st.session_state.peaks = None
                     st.session_state.windows = None
                     st.session_state.hits_dirty = True
-                    if "hits_df" in st.session_state:
-                        del st.session_state.hits_df
+                    for _k in ("hits_df", "hits_editor"):
+                        st.session_state.pop(_k, None)
                     st.rerun()

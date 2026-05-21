@@ -6,7 +6,6 @@ import sqlite3
 import sys
 from collections import deque
 
-import numpy as np
 import pandas as pd
 import torch
 
@@ -93,7 +92,9 @@ def predict_windows(model, windows, class_names, mean, std):
     for i in range(len(windows)):
         preds = [
             {"clase": str(class_names[idx]), "prob": float(prob)}
-            for idx, prob in zip(top_indices[i].cpu().numpy(), top_probs[i].cpu().numpy())
+            for idx, prob in zip(
+                top_indices[i].cpu().numpy(), top_probs[i].cpu().numpy()
+            )
         ]
         results.append(preds)
 
@@ -117,7 +118,9 @@ def load_data_sqlite(start_time, end_time):
     return df
 
 
-def save_detected_punch(user_id, local_training_id, class_name, limb, position, power, prob):
+def save_detected_punch(
+    user_id, local_training_id, class_name, limb, position, power, prob
+):
     conn = _connect_sqlite()
     cursor = conn.cursor()
     cursor.execute(

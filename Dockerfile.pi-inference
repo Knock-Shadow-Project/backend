@@ -20,7 +20,11 @@ RUN pip install --no-cache-dir \
 
 # Copy only what the inference path imports. train.py is intentionally NOT
 # copied — it pulls matplotlib / seaborn / scikit-learn that the Pi never uses.
-COPY ml/pipeline.py ml/model_def.py ml/pi_inference.py ./
+# `pipeline` is now a package (split in Phase C: _constants/_io/_signal/_detect/
+# _dataset). `logging_config` + `model_loader` were also extracted from
+# pi_inference.py and main.py, so both have to land in the image.
+COPY ml/model_def.py ml/logging_config.py ml/model_loader.py ml/pi_inference.py ./
+COPY ml/pipeline/ ./pipeline/
 COPY ml/model/ ./model/
 
 ENV DB_PATH=/data/pi_data.db

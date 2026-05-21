@@ -65,10 +65,13 @@ async fn create_punch(
     State(state): State<AppState>,
     Json(payload): Json<CreateGolpe>,
 ) -> Result<Json<Golpe>, StatusCode> {
+    // Tras la migración 002, `extremidad` y `posicion` son NOT NULL en la BD.
+    // El payload `CreateGolpe` ya los exige como `String` (no `Option`), así
+    // que aquí pasamos referencias directas sin necesidad de validar nulos.
     let item = sqlx::query_as::<_, Golpe>(
         "INSERT INTO golpe (nombre, extremidad, posicion)
          VALUES ($1, $2, $3)
-         RETURNING *",
+         RETURNING id_golpe, nombre, extremidad, posicion",
     )
     .bind(&payload.name)
     .bind(&payload.limb)

@@ -106,9 +106,17 @@ pub async fn insert_ble_sample(
     y: f32,
     z: f32,
 ) -> Result<(), sqlx::Error> {
+    // `received_at` se setea explícito con resolución de milisegundos.
+    // El DEFAULT del schema es `CURRENT_TIMESTAMP`, que en SQLite tiene
+    // resolución de 1 segundo: con ~50 muestras/s por sensor, todas
+    // colisionaban en el mismo timestamp y rompían el `merge_asof` de
+    // `ml/pipeline/_signal.py` (todas las muestras de un sensor en ese
+    // segundo se emparejaban con UNA sola muestra del otro). Ver
+    // `ml/pipeline/_signal.py::_spread_duplicate_timestamps` para el
+    // workaround que reparte datos antiguos sin sub-segundo.
     sqlx::query(
-        "INSERT INTO ble_samples (device_mac, device_name, ble_ts, x, y, z)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO ble_samples (device_mac, device_name, ble_ts, x, y, z, received_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, strftime('%Y-%m-%d %H:%M:%f','now'))",
     )
     .bind(mac)
     .bind(name)

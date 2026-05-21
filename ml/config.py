@@ -98,7 +98,7 @@ def load_inference_config() -> InferenceConfig:
         sensor_mac_2=_optional("SENSOR_MAC_2", "CB:01:10:3E:0D:61"),
         sample_rate=_optional("SAMPLE_RATE", 50, cast=int),
         window_size=_optional("WINDOW_SIZE", 64, cast=int),
-        hit_threshold_g=_optional("HIT_THRESHOLD_G", 1.5, cast=float),
+        hit_threshold_g=_optional("HIT_THRESHOLD_G", 1.2, cast=float),
         sensor_scale=_optional("SENSOR_SCALE", 1000.0, cast=float),
         poll_interval_s=_optional("POLL_INTERVAL_S", 1.0, cast=float),
         buffer_seconds=_optional("BUFFER_SECONDS", 5.0, cast=float),

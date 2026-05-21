@@ -1,0 +1,199 @@
+-- Migración: alinea una BD ya inicializada con `001_ble_schema.sql` +
+-- versión antigua de `002_frontend_schema.sql` (sin RUTINA, sin nuevas
+-- columnas en ENTRENAMIENTO/HISTORIAL) con la nueva versión de `002_*`.
+--
+-- Es idempotente: cada paso usa `IF NOT EXISTS` / `IF EXISTS`, y los
+-- bloques DO comprueban el estado antes de mutar. Ejecutar sobre BD ya
+-- migrada no debería tener efecto.
+--
+-- USO:
+--   psql -U knockshadow -d knockshadow -f 2026_05_20_frontend_v2.sql
+--   (o vía docker exec — ver README de despliegue)
+--
+-- Todo el script va dentro de una única transacción para que un fallo
+-- a media migración no deje la BD en estado inconsistente.
+
+BEGIN;
+
+-- 1. RUTINA -----------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS RUTINA (
+    ID_RUTINA SERIAL PRIMARY KEY,
+    NOMBRE VARCHAR(100) NOT NULL,
+    NIVEL_RECOMENDADO VARCHAR(50),
+    SECUENCIA_GOLPES INTEGER[]
+);
+
+-- Semilla mínima si la tabla acaba de crearse vacía. Se evita re-insertar
+-- si ya hay filas (caso de re-ejecución manual).
+INSERT INTO RUTINA (NOMBRE, NIVEL_RECOMENDADO, SECUENCIA_GOLPES)
+SELECT 'Jab-Cross básico', 'Principiante', ARRAY[1, 7]
+WHERE NOT EXISTS (SELECT 1 FROM RUTINA);
+
+INSERT INTO RUTINA (NOMBRE, NIVEL_RECOMENDADO, SECUENCIA_GOLPES)
+SELECT 'Combo 4 golpes', 'Intermedio', ARRAY[1, 7, 13, 9]
+WHERE (SELECT COUNT(*) FROM RUTINA) < 2;
+
+-- 2. ENTRENAMIENTO ---------------------------------------------------------
+ALTER TABLE ENTRENAMIENTO
+    ADD COLUMN IF NOT EXISTS ID_RUTINA INTEGER,
+    ADD COLUMN IF NOT EXISTS PASO_ACTUAL INTEGER DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS ESTADO VARCHAR(20) DEFAULT 'ACTIVO';
+
+-- Defaults retroactivos para las filas que existían antes de añadir las
+-- columnas: la cláusula DEFAULT del ALTER sólo aplica a inserts nuevos.
+UPDATE ENTRENAMIENTO SET PASO_ACTUAL = 0 WHERE PASO_ACTUAL IS NULL;
+UPDATE ENTRENAMIENTO SET ESTADO = 'ACTIVO' WHERE ESTADO IS NULL;
+
+-- FK a RUTINA (sólo si no existe ya).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_rutina_entrenamiento'
+    ) THEN
+        ALTER TABLE ENTRENAMIENTO
+        ADD CONSTRAINT fk_rutina_entrenamiento
+            FOREIGN KEY (ID_RUTINA) REFERENCES RUTINA (ID_RUTINA)
+            ON DELETE SET NULL;
+    END IF;
+END$$;
+
+-- Default CURRENT_TIMESTAMP para HORA_INICIO (en la BD vieja era NOT NULL
+-- sin default, lo que obligaba al cliente a pasarlo siempre).
+ALTER TABLE ENTRENAMIENTO
+    ALTER COLUMN HORA_INICIO SET DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE ENTRENAMIENTO
+    ALTER COLUMN CALORIAS SET DEFAULT 0;
+
+-- 3. HISTORIAL -------------------------------------------------------------
+-- Cambios:
+--   - Añadir id_historial (PK sintética)
+--   - Renombrar id_golpe -> id_golpe_lanzado
+--   - Añadir id_golpe_esperado, es_correcto, fecha_impacto
+--   - Reemplazar la PK compuesta y las FKs antiguas.
+
+-- 3a. Renombrar id_golpe -> id_golpe_lanzado, si todavía existe la antigua.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'historial' AND column_name = 'id_golpe'
+    ) AND NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'historial' AND column_name = 'id_golpe_lanzado'
+    ) THEN
+        ALTER TABLE HISTORIAL RENAME COLUMN ID_GOLPE TO ID_GOLPE_LANZADO;
+    END IF;
+END$$;
+
+-- 3b. Quitar la PK compuesta antigua (id_entrenamiento, id_golpe) si está.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'historial_pkey'
+          AND conrelid = 'historial'::regclass
+    ) THEN
+        -- Sólo soltamos la PK si todavía es la compuesta antigua: una vez
+        -- añadida id_historial será también historial_pkey, pero sobre una
+        -- sola columna y eso no queremos tirarlo.
+        IF (
+            SELECT COUNT(*) FROM pg_index i
+            JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
+            WHERE i.indrelid = 'historial'::regclass AND i.indisprimary
+        ) = 2 THEN
+            ALTER TABLE HISTORIAL DROP CONSTRAINT historial_pkey;
+        END IF;
+    END IF;
+END$$;
+
+-- 3c. Quitar FKs antiguas (sólo si existen — los nombres cambian en la v2).
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_historial_entrenamiento'
+    ) THEN
+        ALTER TABLE HISTORIAL DROP CONSTRAINT fk_historial_entrenamiento;
+    END IF;
+    IF EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_historial_golpe'
+    ) THEN
+        ALTER TABLE HISTORIAL DROP CONSTRAINT fk_historial_golpe;
+    END IF;
+END$$;
+
+-- 3d. Añadir id_historial como serial + PK.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'historial' AND column_name = 'id_historial'
+    ) THEN
+        -- ADD COLUMN GENERATED rellena automáticamente las filas existentes.
+        ALTER TABLE HISTORIAL
+            ADD COLUMN ID_HISTORIAL INTEGER GENERATED BY DEFAULT AS IDENTITY;
+        ALTER TABLE HISTORIAL ADD PRIMARY KEY (ID_HISTORIAL);
+    END IF;
+END$$;
+
+-- 3e. Resto de columnas nuevas.
+ALTER TABLE HISTORIAL
+    ADD COLUMN IF NOT EXISTS ID_GOLPE_ESPERADO INTEGER,
+    ADD COLUMN IF NOT EXISTS ES_CORRECTO BOOLEAN DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS FECHA_IMPACTO TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+UPDATE HISTORIAL SET ES_CORRECTO = TRUE WHERE ES_CORRECTO IS NULL;
+UPDATE HISTORIAL SET FECHA_IMPACTO = CURRENT_TIMESTAMP WHERE FECHA_IMPACTO IS NULL;
+
+-- 3f. FKs nuevas con los nombres de la v2.
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_hist_entrenamiento'
+    ) THEN
+        ALTER TABLE HISTORIAL
+        ADD CONSTRAINT fk_hist_entrenamiento
+            FOREIGN KEY (ID_ENTRENAMIENTO) REFERENCES ENTRENAMIENTO (ID_ENTRENAMIENTO)
+            ON DELETE CASCADE;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_hist_lanzado'
+    ) THEN
+        ALTER TABLE HISTORIAL
+        ADD CONSTRAINT fk_hist_lanzado
+            FOREIGN KEY (ID_GOLPE_LANZADO) REFERENCES GOLPE (ID_GOLPE);
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'fk_hist_esperado'
+    ) THEN
+        ALTER TABLE HISTORIAL
+        ADD CONSTRAINT fk_hist_esperado
+            FOREIGN KEY (ID_GOLPE_ESPERADO) REFERENCES GOLPE (ID_GOLPE);
+    END IF;
+END$$;
+
+-- 4. GOLPE: hacer NOT NULL extremidad y posicion (la BD antigua las
+-- permitía nullable). Antes de aplicar NOT NULL, sembramos defaults.
+UPDATE GOLPE SET EXTREMIDAD = 'Desconocida' WHERE EXTREMIDAD IS NULL;
+UPDATE GOLPE SET POSICION = 'Desconocida' WHERE POSICION IS NULL;
+ALTER TABLE GOLPE
+    ALTER COLUMN EXTREMIDAD SET NOT NULL,
+    ALTER COLUMN POSICION SET NOT NULL;
+
+-- 5. Índices de consulta -------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_entrenamiento_usuario ON ENTRENAMIENTO (ID_USUARIO);
+CREATE INDEX IF NOT EXISTS idx_entrenamiento_rutina ON ENTRENAMIENTO (ID_RUTINA);
+CREATE INDEX IF NOT EXISTS idx_historial_entrenamiento ON HISTORIAL (ID_ENTRENAMIENTO);
+CREATE INDEX IF NOT EXISTS idx_historial_golpe_lanzado ON HISTORIAL (ID_GOLPE_LANZADO);
+
+COMMIT;
+
+-- Verificación post-migración (no afecta a la transacción, sólo log).
+\echo '--- post-migration state ---'
+\d entrenamiento
+\d historial
+\d rutina
+SELECT 'rutina rows: ' || COUNT(*) FROM RUTINA;
+SELECT 'entrenamiento rows: ' || COUNT(*) FROM ENTRENAMIENTO;
+SELECT 'historial rows: ' || COUNT(*) FROM HISTORIAL;

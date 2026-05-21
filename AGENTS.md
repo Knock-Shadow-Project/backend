@@ -45,13 +45,15 @@ backend/
 
 ## API Conventions
 
-- **All API parameters are in English** (`email`, `password`, `first_name`, `last_name`, `phone`, `age`, `weight`, `height`, `country`, `city`, `address`, `laterality`, `level`, `user_id`, `training_id`, `punch_id`, `start_time`, `end_time`, `training_type`, `calories`, `name`, `limb`, `position`, `power`).
-- **Database columns remain in Spanish** (`correo`, `contrasena`, `nombre`, `apellido`, etc.) and are mapped via `#[sqlx(rename = "...")]`.
+- **All API parameters are in English** (`email`, `password`, `first_name`, `last_name`, `phone`, `age`, `weight`, `height`, `country`, `city`, `address`, `laterality`, `level`, `user_id`, `training_id`, `punch_id`, `routine_id`, `history_id`, `start_time`, `end_time`, `training_type`, `calories`, `current_step`, `state`, `name`, `limb`, `position`, `power`, `recommended_level`, `punch_sequence`, `thrown_punch_id`, `expected_punch_id`, `is_correct`, `impact_date`).
+- **Database columns remain in Spanish** (`correo`, `contrasena`, `nombre`, `apellido`, `id_rutina`, `paso_actual`, `estado`, `id_golpe_lanzado`, `id_golpe_esperado`, `es_correcto`, `fecha_impacto`, `secuencia_golpes`, etc.) and are mapped via `#[sqlx(rename = "...")]`.
 - **Endpoints are in English:**
   - `/users` (was `/usuarios`)
   - `/trainings` (was `/entrenamientos`)
   - `/punches` (was `/golpes`)
   - `/history` (was `/historial`)
+  - `/routines` (was `/rutinas`) — añadido en la migración 002
+- **History records have a synthetic PK** (`history_id`) desde la migración 002. El antiguo path `/history/:training_id/:punch_id` se sustituye por `/history/:history_id`.
 - **Passwords are hashed with bcrypt** (salted, default cost) before storage. Plaintext passwords are never stored.
 
 ## Auth

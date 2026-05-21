@@ -4,6 +4,7 @@ use axum::middleware;
 mod entrenamiento;
 mod golpe;
 mod historial;
+mod rutina;
 mod usuario;
 mod ws;
 
@@ -22,6 +23,7 @@ pub fn router() -> Router<AppState> {
         .merge(entrenamiento::routes())
         .merge(golpe::routes())
         .merge(historial::routes())
+        .merge(rutina::routes())
         .route("/ws", axum::routing::get(ws::ws_handler))
         .layer(middleware::from_fn(auth_middleware));
 

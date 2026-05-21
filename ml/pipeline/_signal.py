@@ -29,6 +29,44 @@ def lowpass_filter(
     return filtfilt(b, a, signal)
 
 
+def _spread_duplicate_timestamps(df: pd.DataFrame) -> pd.DataFrame:
+    """Reparte uniformemente las filas que comparten un mismo `received_at`.
+
+    Workaround para datos antiguos guardados antes de que `pi-service` pasara a
+    insertar `received_at` con resolución de milisegundos: el DEFAULT
+    `CURRENT_TIMESTAMP` de SQLite truncaba al segundo, así que las ~50
+    muestras/s caían todas en el mismo timestamp y rompían `merge_asof`
+    (todas se emparejaban con UNA sola muestra del otro sensor → meseta plana).
+
+    Cada grupo de filas con el mismo `received_at` se distribuye linealmente
+    dentro de ese segundo (offset = i / N segundos). Si no hay duplicados —
+    caso de datos nuevos con timestamps sub-segundo — es un no-op funcional
+    (todos los offsets son 0).
+
+    Asume que el df ya viene ordenado por inserción dentro de cada grupo, que
+    es el orden cronológico real entregado por el BLE.
+
+    Reordena por `received_at` al final: cuando una consulta mezcla datos
+    viejos (segundo entero) y nuevos (con ms), el spread del grupo viejo
+    puede generar timestamps que caen entre los nuevos vecinos —
+    p. ej. una fila vieja en `12.000` con N=50 acaba en `12.980` mientras
+    que una nueva quedaba en `12.100`. Sin re-sort, `merge_asof` rompe con
+    `ValueError: left keys must be sorted`.
+    """
+    if df.empty:
+        return df
+    df = df.copy()
+    grp = df.groupby("received_at", sort=False)
+    sizes = grp["received_at"].transform("size").to_numpy()
+    idx = grp.cumcount().to_numpy()
+    # i/N ∈ [0, 1) segundos → nanosegundos para timedelta
+    offsets_ns = (idx.astype("int64") * 1_000_000_000) // np.maximum(sizes, 1).astype(
+        "int64"
+    )
+    df["received_at"] = df["received_at"] + pd.to_timedelta(offsets_ns, unit="ns")
+    return df.sort_values("received_at", kind="stable").reset_index(drop=True)
+
+
 def merge_sensors(
     df: pd.DataFrame,
     mac1: str = SENSOR_MAC_1,
@@ -53,6 +91,11 @@ def merge_sensors(
 
     if df1.empty or df2.empty:
         return pd.DataFrame()
+
+    # Despliega timestamps duplicados dentro del segundo. No-op para datos
+    # nuevos con resolución sub-segundo; imprescindible para los antiguos.
+    df1 = _spread_duplicate_timestamps(df1)
+    df2 = _spread_duplicate_timestamps(df2)
 
     merged = pd.merge_asof(
         df1,
