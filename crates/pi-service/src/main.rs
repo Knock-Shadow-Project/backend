@@ -137,13 +137,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok(punches) => {
                     for (id, class_name, limb, position, power, prob, detected_at) in punches {
                         last_id = id;
+                        // Normaliza a RFC3339 con sufijo `Z`. SQLite guarda
+                        // detected_at como `YYYY-MM-DD HH:MM:SS` sin TZ; el UI
+                        // Date.parse() asume hora local sin sufijo y eso pinta
+                        // "Xh ago" con el offset de la zona horaria.
+                        let detected_at_iso = chrono::NaiveDateTime::parse_from_str(
+                            &detected_at,
+                            "%Y-%m-%d %H:%M:%S%.f",
+                        )
+                        .or_else(|_| {
+                            chrono::NaiveDateTime::parse_from_str(
+                                &detected_at,
+                                "%Y-%m-%d %H:%M:%S",
+                            )
+                        })
+                        .map(|n| n.and_utc().to_rfc3339())
+                        .unwrap_or(detected_at);
                         let event = PunchEvent {
                             class_name,
                             limb,
                             position,
                             power,
                             prob,
-                            detected_at,
+                            detected_at: detected_at_iso,
                         };
                         let _ = state_clone.ws_tx.send(event);
                     }

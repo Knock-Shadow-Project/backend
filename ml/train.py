@@ -31,13 +31,43 @@ def normalize(X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
 def augment(
     X: np.ndarray, y: np.ndarray, factor: int = 2
 ) -> tuple[np.ndarray, np.ndarray]:
+    """Augmentación con ruido gaussiano. Repite `factor` veces.
+
+    Mezcla tres tipos de jitter para no aprender solo "señal pura":
+    - Ruido gaussiano (sensor noise)
+    - Escalado leve (variación de fuerza del golpe)
+    - Pequeño shift temporal (jitter del peak alignment)
+    """
     rng = np.random.default_rng(42)
     parts_X, parts_y = [X], [y]
-    for _ in range(factor):
+    for k in range(factor):
         noise = rng.normal(0, 0.05, X.shape).astype(np.float32)
-        parts_X.append(X + noise)
+        scale = rng.uniform(0.9, 1.1, (X.shape[0], 1, 1)).astype(np.float32)
+        # shift de ±2 muestras (~40ms) para simular jitter de la detección de pico
+        shift = rng.integers(-2, 3, X.shape[0])
+        aug = (X * scale) + noise
+        if k % 2 == 0:  # solo aplicar shift a la mitad de las copias
+            shifted = np.empty_like(aug)
+            for i, s in enumerate(shift):
+                shifted[i] = np.roll(aug[i], s, axis=0)
+            aug = shifted
+        parts_X.append(aug)
         parts_y.append(y)
     return np.concatenate(parts_X), np.concatenate(parts_y)
+
+
+def compute_class_weights(y: np.ndarray, num_classes: int) -> torch.Tensor:
+    """Pesos inversamente proporcionales a la frecuencia.
+
+    Necesario porque, p. ej., jab_derecha_arriba tiene 81 muestras y
+    hook_derecha_arriba solo 61 — sin pesos el modelo aprende a "preferir"
+    las clases mayoritarias y la inferencia real nunca predice las raras
+    (uppercut nunca aparecía en producción a pesar de tener 75 muestras).
+    """
+    counts = np.bincount(y, minlength=num_classes).astype(np.float64)
+    counts[counts == 0] = 1.0  # evita div por cero para clases sin muestras
+    weights = counts.sum() / (num_classes * counts)
+    return torch.from_numpy(weights).float()
 
 
 def train_epoch(model, loader, criterion, optimizer):
@@ -153,8 +183,12 @@ def main() -> None:
     )
 
     # ---- Augmentation on train only ----
-    X_train, y_train = augment(X_train, y_train, factor=2)
-    print(f"Entrenamiento: {len(X_train)} muestras (con augmentation)")
+    # factor=4 (era 2) — multiplica las muestras x5. Con 1015 ⇒ ~4000 train
+    # samples, suficiente para que las clases minoritarias salgan en cada
+    # batch sin sobre-entrenar. Combinado con class weights compensa el
+    # desequilibrio jab(81) vs hook_derecha_arriba(61).
+    X_train, y_train = augment(X_train, y_train, factor=4)
+    print(f"Entrenamiento: {len(X_train)} muestras (con augmentation 4x)")
     print(f"Validación:    {len(X_val)} muestras\n")
 
     # ---- DataLoaders ----
@@ -175,7 +209,16 @@ def main() -> None:
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Parámetros entrenables: {total_params:,}\n")
 
-    criterion = nn.CrossEntropyLoss()
+    # Pesos por clase (inversa de la frecuencia) para que el modelo no
+    # ignore las minoritarias. y_train ya está augmentado pero
+    # augmentation preserva las ratios relativas, así que el resultado
+    # es el mismo que computarlo sobre el split original.
+    class_weights = compute_class_weights(y_train, num_classes).to(DEVICE)
+    print("Pesos por clase:")
+    for cls, w in zip(class_names, class_weights.cpu().numpy()):
+        print(f"  {cls:30s} {w:.3f}")
+    print()
+    criterion = nn.CrossEntropyLoss(weight=class_weights)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,

@@ -19,13 +19,19 @@ def lowpass_filter(
 ) -> np.ndarray:
     """Aplica un Butterworth low-pass orden 3 con filtfilt (fase cero).
 
-    Devuelve la señal original sin tocar si es demasiado corta para
-    `filtfilt`'s padlen (≤ 9 muestras). Eso evita un ValueError ruidoso
-    durante la inferencia con buffers cortos al arranque.
+    `filtfilt` necesita `len(signal) > padlen`. Para un Butterworth orden 3
+    (a, b de longitud 4) el padlen por defecto de scipy es `3*max(len(a),
+    len(b)) = 12`. Si la señal es más corta crasheaba con `ValueError: The
+    length of the input vector x must be greater than padlen, which is 12`
+    — pasaba en pi_inference al recibir solo unas pocas muestras válidas
+    tras `merge_asof` (p. ej. un único punch al borde del buffer). Solución:
+    devolver la señal cruda si no cabe el padlen por defecto. El filtrado
+    es opcional para ventanas cortas — el modelo es robusto a la diferencia.
     """
-    if len(signal) <= 9:
-        return signal
     b, a = butter(3, cutoff / (0.5 * fs), btype="low")
+    default_padlen = 3 * max(len(a), len(b))  # 12 para Butterworth orden 3
+    if len(signal) <= default_padlen:
+        return signal
     return filtfilt(b, a, signal)
 
 

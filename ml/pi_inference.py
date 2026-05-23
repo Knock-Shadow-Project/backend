@@ -264,17 +264,25 @@ class AsyncInferenceEngine:
             await asyncio.sleep(0.1)
             active_check_tick += 1
 
-            # Re-verificar entrenamiento activo cada ~10 segundos si no tenemos uno
-            if self.local_training_id is None and active_check_tick % 100 == 0:
+            # Re-verifica el entrenamiento activo cada ~10 segundos SIEMPRE,
+            # no solo cuando no hay uno. Antes (pre-2026-05-23) la guarda
+            # `if self.local_training_id is None` significaba que tras detectar
+            # un training quedaba "pegado" a ese ID para siempre: si el usuario
+            # paraba y arrancaba un nuevo training, los nuevos golpes seguían
+            # guardándose contra el ID viejo (un local_training cerrado), y
+            # los siguientes trainings reales no recibían ningún punch.
+            if active_check_tick % 100 == 0:
                 tid, uid = get_active_training()
-                if tid is not None:
-                    self.local_training_id = tid
-                    self.user_id = uid
+                if tid != self.local_training_id:
                     log.info(
-                        "active_training_autodetected",
-                        training_id=tid,
+                        "active_training_changed",
+                        old_training_id=self.local_training_id,
+                        new_training_id=tid,
                         user_id=uid,
                     )
+                    self.local_training_id = tid
+                    if uid is not None:
+                        self.user_id = uid
 
             new_dfs = []
             while self._buffer:

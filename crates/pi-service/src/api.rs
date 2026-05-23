@@ -274,12 +274,33 @@ async fn list_punches(
                 position,
                 power,
                 prob,
-                detected_at,
+                // detected_at en SQLite es `YYYY-MM-DD HH:MM:SS` (UTC, sin TZ).
+                // El UI lo parsea con Date.parse(), que SIN sufijo Z asume hora
+                // local del navegador → off-by-N-hours en zonas distintas a UTC.
+                // Normalizamos a RFC3339 con `Z` para que el cliente no tenga
+                // que adivinar la zona.
+                detected_at: normalize_sqlite_ts_utc(&detected_at),
             },
         )
         .collect();
 
     Ok(axum::Json(punches))
+}
+
+/// Convierte un timestamp SQLite (`YYYY-MM-DD HH:MM:SS[.fff]`, sin TZ, asumido UTC)
+/// a RFC3339 con sufijo `Z`. Si el string ya tiene zona horaria o no parsea,
+/// se devuelve sin tocar — defensivo para no romper consumidores existentes.
+fn normalize_sqlite_ts_utc(ts: &str) -> String {
+    if ts.ends_with('Z') || ts.contains('+') || ts.contains('T') {
+        return ts.to_string();
+    }
+    // Probar primero con fracción de segundo, luego sin.
+    for fmt in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%d %H:%M:%S"] {
+        if let Ok(n) = chrono::NaiveDateTime::parse_from_str(ts, fmt) {
+            return n.and_utc().to_rfc3339();
+        }
+    }
+    ts.to_string()
 }
 
 async fn ws_handler(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> impl IntoResponse {
