@@ -4,13 +4,40 @@
 //! - El modelo `BleSample` para cada lectura recibida.
 //! - `SampleWriter`, que desacopla recepcion de datos y escritura a BD.
 //! - Un loop de escritura por lotes con transacciones.
+//!
+//! ## Política: NO guardamos muestras crudas en Postgres
+//!
+//! Decisión de producto: el cloud almacena sólo datos procesados (golpes
+//! detectados → tabla `HISTORIAL` vía la API). Las muestras BLE crudas
+//! pueden generar millones de filas por hora y no aportan valor más allá
+//! de la inferencia, que ocurre en el Pi. Por eso `DbWritter::send_sample`
+//! es un no-op por defecto: las muestras se descartan en el productor y
+//! nunca se encolan al writer loop.
+//!
+//! La política se puede invertir con `STORE_RAW_SAMPLES=1` (env var) para
+//! depuración temporal — útil si se necesita inspeccionar tráfico crudo
+//! con Grafana. NO activar en producción de forma permanente: el
+//! TimescaleDB se llenará igual que se llenaba la SQLite del Pi.
 
 use std::env;
 use std::error::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 use tokio_postgres::{Client, NoTls, Statement};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
+
+/// `true` ⇒ inserta muestras crudas en `ble_samples` (legacy / debugging).
+/// `false` ⇒ las descarta en `send_sample` antes de tocar el canal.
+///
+/// Lo leemos UNA vez en el primer `connect` y lo cacheamos en este
+/// `AtomicBool`. Se podría usar `OnceLock` pero `AtomicBool` permite a un
+/// futuro endpoint admin alternarlo en runtime sin reiniciar el proceso.
+static STORE_RAW_SAMPLES: AtomicBool = AtomicBool::new(false);
+
+fn store_raw_samples_enabled() -> bool {
+    STORE_RAW_SAMPLES.load(Ordering::Relaxed)
+}
 
 /// Muestra de telemetria decodificada que se persiste en la base de datos.
 #[derive(Debug, Clone)]
@@ -67,6 +94,23 @@ pub struct DbWritter {
 impl DbWritter {
     /// Crea la conexion a PostgreSQL, inicializa schema y arranca el loop de escritura.
     pub async fn connect(database_url: &str) -> Result<Self, Box<dyn Error + Send + Sync>> {
+        // Política de muestras crudas (ver doc del módulo). Default `false`.
+        let store_raw = env::var("STORE_RAW_SAMPLES")
+            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+            .unwrap_or(false);
+        STORE_RAW_SAMPLES.store(store_raw, Ordering::Relaxed);
+        if store_raw {
+            warn!(
+                "STORE_RAW_SAMPLES=true — raw BLE samples will be inserted into ble_samples. \
+                 Only use for short debugging windows: this fills TimescaleDB fast."
+            );
+        } else {
+            info!(
+                "Raw BLE samples will be DROPPED before reaching Postgres. \
+                 Battery readings still persist. Set STORE_RAW_SAMPLES=1 to override."
+            );
+        }
+
         let client = spawn_pg_connection(database_url).await?;
 
         // Crea tabla e indice si aun no existen.
@@ -87,10 +131,24 @@ impl DbWritter {
     }
 
     /// Encola una muestra para que sea persistida por el writer en segundo plano.
+    ///
+    /// Si `STORE_RAW_SAMPLES` está desactivado (default), se descarta el
+    /// sample sin tocar el canal: ni siquiera pagamos el envío al writer.
+    /// Devolvemos `Ok(())` para que el caller no distinga este caso de un
+    /// envío real — el contrato es "el sample se ha aceptado", no "el
+    /// sample se ha persistido".
     pub async fn send_sample(
         &self,
         sample: BleSample,
     ) -> Result<(), mpsc::error::SendError<DbRecord>> {
+        if !store_raw_samples_enabled() {
+            // `debug!` y no `trace!` porque el caller suele llamar a este
+            // método varias veces por segundo; `debug` ya filtra a nivel
+            // de `RUST_LOG=info`, que es el default en producción.
+            debug!("raw sample dropped (STORE_RAW_SAMPLES disabled)");
+            let _ = sample;
+            return Ok(());
+        }
         self.tx.send(DbRecord::Sample(sample)).await
     }
 

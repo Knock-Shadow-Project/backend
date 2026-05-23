@@ -1,10 +1,10 @@
 import datetime
+import os
 import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from st_keyup import st_keyup
 
 from pipeline import (
     DEFAULT_DATASET,
@@ -41,23 +41,6 @@ POSITIONS = [
     "derecha_abajo",
 ]
 
-# Atajos de teclado
-PUNCH_SHORTCUTS = {
-    "1": "jab",
-    "2": "cross",
-    "3": "hook",
-    "4": "uppercut",
-}
-POSITION_SHORTCUTS = {
-    "q": "izquierda_arriba",
-    "w": "izquierda_abajo",
-    "e": "frente_arriba",
-    "r": "frente_abajo",
-    "t": "derecha_arriba",
-    "y": "derecha_abajo",
-}
-
-
 def init_session():
     # Umbral por defecto para el slider de detección. Distinto y más bajo que
     # HIT_THRESHOLD_G (el del backend de inferencia/entrenamiento) a propósito:
@@ -76,11 +59,306 @@ def init_session():
         "last_threshold": DEFAULT_SLIDER_THRESHOLD,
         "default_punch": PUNCH_TYPES[0],
         "default_position": POSITIONS[0],
-        "last_key": "",
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
+
+def _dataset_mtime() -> float:
+    """mtime del .npz como cache key. 0.0 si no existe (primera ejecución)."""
+    try:
+        return os.path.getmtime(DEFAULT_DATASET)
+    except OSError:
+        return 0.0
+
+
+@st.cache_data(show_spinner=False)
+def cached_load_dataset(mtime: float):
+    """Lee el dataset entero del disco solo cuando cambia el .npz.
+
+    En la Pi este .npz puede pesar varios MB y leerlo en cada rerun (lo que
+    pasaba antes) volvía toda la UI muy lenta. El parámetro `mtime` no se usa
+    dentro de la función — sirve solo como cache key para que streamlit
+    invalide automáticamente cuando guardamos/borramos/re-etiquetamos.
+    """
+    del mtime  # solo se usa como cache key
+    return load_dataset(DEFAULT_DATASET)
+
+
+@st.cache_data(show_spinner=False)
+def cached_recent_samples(mtime: float, n: int = 10):
+    """Mismo truco que cached_load_dataset, pero para las últimas muestras."""
+    del mtime  # solo se usa como cache key
+    return get_recent_samples(n=n)
+
+
+def _sync_hits_editor() -> None:
+    """Aplica las ediciones del widget a hits_df.
+
+    Solo se llama vía `on_change` del data_editor. La llamada defensiva post-
+    widget que había antes duplicaba el trabajo en cada edición y se ha
+    eliminado: en Streamlit ≥1.37 on_change se dispara siempre antes del rerun.
+    """
+    state = st.session_state.get("hits_editor")
+    if not state:
+        return
+    df = st.session_state.hits_df
+    for row_idx, changes in state.get("edited_rows", {}).items():
+        try:
+            ri = int(row_idx)
+        except (TypeError, ValueError):
+            continue
+        if 0 <= ri < len(df):
+            for col, val in changes.items():
+                if col in df.columns:
+                    df.at[ri, col] = val
+    st.session_state.hits_df = df
+
+
+@st.fragment
+def render_hits_editor() -> None:
+    """Editor interactivo de golpes detectados.
+
+    Vive en un fragment para que editar una celda del data_editor, pulsar
+    acciones masivas o expandir el inspector NO disparen un rerun del script
+    completo (que en la Pi tarda segundos porque vuelve a leer el .npz del
+    dataset y a re-renderizar el Plotly de la grabación). Solo Guardar y
+    Descartar piden un rerun de app entera para resetear el estado.
+    """
+    windows = st.session_state.get("windows")
+    merged = st.session_state.get("merged_df")
+    if windows is None or len(windows) == 0 or merged is None:
+        return
+
+    # ---- Barra de acciones masivas ----
+    st.markdown("**Acciones rápidas** — aplica a TODOS los golpes a la vez:")
+    bcols = st.columns([1.4, 1.4, 1, 1, 1])
+    with bcols[0]:
+        bulk_tipo = st.selectbox(
+            "Tipo masivo",
+            PUNCH_TYPES,
+            index=PUNCH_TYPES.index(st.session_state.default_punch),
+            key="bulk_tipo_select",
+            label_visibility="collapsed",
+        )
+    with bcols[1]:
+        bulk_pos = st.selectbox(
+            "Posición masiva",
+            POSITIONS,
+            index=POSITIONS.index(st.session_state.default_position),
+            key="bulk_pos_select",
+            label_visibility="collapsed",
+        )
+    with bcols[2]:
+        if st.button(
+            "Aplicar tipo",
+            use_container_width=True,
+            help="Asigna ese tipo a TODOS los golpes",
+        ):
+            st.session_state.hits_df["tipo"] = bulk_tipo
+            st.session_state.pop("hits_editor", None)
+            st.rerun()
+    with bcols[3]:
+        if st.button(
+            "Aplicar pos.",
+            use_container_width=True,
+            help="Asigna esa posición a TODOS los golpes",
+        ):
+            st.session_state.hits_df["posicion"] = bulk_pos
+            st.session_state.pop("hits_editor", None)
+            st.rerun()
+    with bcols[4]:
+        if st.button(
+            "Invertir sel.",
+            use_container_width=True,
+            help="Invierte qué golpes están marcados para guardar",
+        ):
+            st.session_state.hits_df["guardar"] = ~st.session_state.hits_df[
+                "guardar"
+            ].astype(bool)
+            st.session_state.pop("hits_editor", None)
+            st.rerun()
+
+    # ---- Editor por fila ----
+    # OJO: pasamos una copia para que el widget no muta hits_df directamente;
+    # las ediciones se aplican vía _sync_hits_editor en on_change.
+    st.data_editor(
+        st.session_state.hits_df.copy(),
+        column_config={
+            "guardar": st.column_config.CheckboxColumn(
+                "✓",
+                help="Marca para guardar este golpe",
+                width="small",
+            ),
+            "golpe": st.column_config.NumberColumn(
+                "#", disabled=True, width="small"
+            ),
+            "tiempo": st.column_config.TextColumn(
+                "Tiempo",
+                disabled=True,
+                help="Momento aproximado del pico",
+            ),
+            "pico_mag": st.column_config.NumberColumn(
+                "Pico (G)", disabled=True, format="%.2f"
+            ),
+            "tipo": st.column_config.SelectboxColumn(
+                "Tipo", options=PUNCH_TYPES, required=True
+            ),
+            "posicion": st.column_config.SelectboxColumn(
+                "Posición", options=POSITIONS, required=True
+            ),
+        },
+        hide_index=True,
+        use_container_width=True,
+        key="hits_editor",
+        on_change=_sync_hits_editor,
+    )
+
+    current = st.session_state.hits_df
+    current_labels = (
+        current["tipo"].astype(str) + "_" + current["posicion"].astype(str)
+    )
+    to_save_mask = current["guardar"].astype(bool)
+    n_selected = int(to_save_mask.sum())
+
+    # ---- Resumen vivo por etiqueta (chips de colores) ----
+    counts = current_labels[to_save_mask].value_counts()
+    if len(counts) > 0:
+        palette = [
+            "#1f77b4",
+            "#ff7f0e",
+            "#2ca02c",
+            "#d62728",
+            "#9467bd",
+            "#8c564b",
+            "#e377c2",
+            "#7f7f7f",
+            "#bcbd22",
+            "#17becf",
+        ]
+        chips_html = []
+        for i, label in enumerate(counts.index):
+            color = palette[i % len(palette)]
+            chips_html.append(
+                f'<span style="background:{color};color:#fff;'
+                "padding:3px 10px;border-radius:12px;margin:2px;"
+                'display:inline-block;font-size:0.85rem;'
+                f'font-weight:600;">{label} · {int(counts[label])}</span>'
+            )
+        st.markdown(
+            '<div style="margin:6px 0 12px 0;">'
+            + "".join(chips_html)
+            + "</div>",
+            unsafe_allow_html=True,
+        )
+
+    # ---- Inspector de golpe individual ----
+    with st.expander(
+        f"🔍 Inspeccionar un golpe ({len(windows)} disponibles)",
+        expanded=False,
+    ):
+        inspect_n = st.number_input(
+            "Número de golpe",
+            min_value=1,
+            max_value=int(len(windows)),
+            value=1,
+            step=1,
+            key="hit_inspector_idx",
+        )
+        idx_i = int(inspect_n) - 1
+        if 0 <= idx_i < len(windows):
+            w = windows[idx_i]
+            fig_i = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                subplot_titles=("Sensor 1", "Sensor 2"),
+                vertical_spacing=0.12,
+            )
+            for ax_i, color, name in [
+                (0, "#1f77b4", "x1"),
+                (1, "#2ca02c", "y1"),
+                (2, "#d62728", "z1"),
+            ]:
+                fig_i.add_trace(
+                    go.Scatter(
+                        y=w[:, ax_i],
+                        name=name,
+                        line=dict(color=color, width=1.5),
+                    ),
+                    row=1,
+                    col=1,
+                )
+            for ax_i, color, name in [
+                (3, "#9467bd", "x2"),
+                (4, "#8c564b", "y2"),
+                (5, "#e377c2", "z2"),
+            ]:
+                fig_i.add_trace(
+                    go.Scatter(
+                        y=w[:, ax_i],
+                        name=name,
+                        line=dict(color=color, width=1.5),
+                    ),
+                    row=2,
+                    col=1,
+                )
+            fig_i.update_layout(
+                height=320, margin=dict(t=40, b=10), showlegend=True
+            )
+            st.plotly_chart(fig_i, use_container_width=True)
+            row_i = current.iloc[idx_i]
+            flag = "✓ se guardará" if bool(row_i["guardar"]) else "✗ NO se guardará"
+            st.caption(
+                f"Etiqueta: **{row_i['tipo']}_{row_i['posicion']}** · "
+                f"Pico: **{row_i['pico_mag']} G** · {flag}"
+            )
+
+    st.metric("Golpes seleccionados para guardar", n_selected)
+
+    if st.button(
+        f"Guardar {n_selected} golpe(s) seleccionado(s)",
+        type="primary",
+        use_container_width=True,
+        disabled=(n_selected == 0),
+    ):
+        selected = current[to_save_mask]
+        indices = selected["golpe"].values.astype(int) - 1
+        X_to_save = windows[indices]
+        y_to_save = (
+            selected["tipo"].astype(str)
+            + "_"
+            + selected["posicion"].astype(str)
+        ).values.astype(str)
+        total, _ = save_dataset(X_to_save, y_to_save)
+        st.success(
+            f"Guardadas {n_selected} muestra(s) — total en dataset: {total}"
+        )
+        # Reset for next recording. scope="app" porque queremos rerun completo
+        # (resetear el flujo entero, no solo el fragment).
+        st.session_state.end_time = None
+        st.session_state.merged_df = None
+        st.session_state.peaks = None
+        st.session_state.windows = None
+        st.session_state.hits_dirty = True
+        for _k in ("hits_df", "hits_editor"):
+            st.session_state.pop(_k, None)
+        st.rerun(scope="app")
+
+    if st.button(
+        "Descartar y nueva grabación",
+        type="secondary",
+        use_container_width=True,
+    ):
+        st.session_state.end_time = None
+        st.session_state.merged_df = None
+        st.session_state.peaks = None
+        st.session_state.windows = None
+        st.session_state.hits_dirty = True
+        for _k in ("hits_df", "hits_editor"):
+            st.session_state.pop(_k, None)
+        st.rerun(scope="app")
 
 
 st.set_page_config(page_title="KnockShadow Dataset Tool", layout="wide")
@@ -130,7 +408,8 @@ with st.sidebar:
     render_sensor_status()
     st.divider()
     st.header("Dataset")
-    X_ds, y_ds, ids_ds = load_dataset(DEFAULT_DATASET)
+    _mtime = _dataset_mtime()
+    X_ds, y_ds, ids_ds = cached_load_dataset(_mtime)
     if len(y_ds) > 0:
         st.metric("Total muestras", len(y_ds))
         counts = pd.Series(y_ds).value_counts().rename("muestras")
@@ -140,7 +419,7 @@ with st.sidebar:
 
     st.divider()
     st.subheader("Últimas muestras guardadas")
-    recent = get_recent_samples(n=10)
+    recent = cached_recent_samples(_mtime, n=10)
     if recent:
         for i, sample in enumerate(recent):
             cols = st.columns([3, 1])
@@ -309,41 +588,7 @@ with col_control:
         ).total_seconds()
         st.metric("Duración grabada", f"{duration:.1f} s")
 
-    # ---- Atajos de teclado ----
     if not st.session_state.recording and st.session_state.end_time:
-        st.divider()
-        st.subheader("Atajos de teclado")
-        st.caption("Haz clic en el campo de abajo y presiona la tecla deseada")
-        key_pressed = st_keyup(
-            "Tecla presionada",
-            key="keypress_input",
-            label_visibility="collapsed",
-            placeholder="Presiona 1-4 (tipo) o Q,Y (posición)...",
-        )
-        if key_pressed and key_pressed != st.session_state.last_key:
-            k = key_pressed[-1].lower() if key_pressed else ""
-            st.session_state.last_key = key_pressed
-            if k in PUNCH_SHORTCUTS:
-                st.session_state.default_punch = PUNCH_SHORTCUTS[k]
-                st.toast(f"Tipo seleccionado: {PUNCH_SHORTCUTS[k]}")
-                st.rerun()
-            elif k in POSITION_SHORTCUTS:
-                st.session_state.default_position = POSITION_SHORTCUTS[k]
-                st.toast(f"Posición seleccionada: {POSITION_SHORTCUTS[k]}")
-                st.rerun()
-
-        cols_atajos = st.columns(2)
-        with cols_atajos[0]:
-            st.markdown(
-                "**Tipos**<br>1: jab<br>2: cross<br>3: hook<br>4: uppercut",
-                unsafe_allow_html=True,
-            )
-        with cols_atajos[1]:
-            st.markdown(
-                "**Posiciones**<br>Q: izq. arriba<br>W: izq. abajo<br>E: frente arriba<br>R: frente abajo<br>T: der. arriba<br>Y: der. abajo",
-                unsafe_allow_html=True,
-            )
-
         st.divider()
         st.subheader("Valores por defecto")
         default_punch = st.selectbox(
@@ -533,257 +778,8 @@ with col_viz:
                     # y reescribiría filas que el usuario no había tocado.
                     st.session_state.pop("hits_editor", None)
 
-                def _sync_hits_editor() -> None:
-                    """Aplica las ediciones del widget a hits_df.
-
-                    Se llama tanto como `on_change` (antes del rerun, para que
-                    el resto del script vea los cambios inmediatamente) como
-                    de forma defensiva justo después de `st.data_editor` por
-                    si on_change no se disparase en algún caso límite.
-                    """
-                    state = st.session_state.get("hits_editor")
-                    if not state:
-                        return
-                    df = st.session_state.hits_df
-                    for row_idx, changes in state.get("edited_rows", {}).items():
-                        try:
-                            ri = int(row_idx)
-                        except (TypeError, ValueError):
-                            continue
-                        if 0 <= ri < len(df):
-                            for col, val in changes.items():
-                                if col in df.columns:
-                                    df.at[ri, col] = val
-                    st.session_state.hits_df = df
-
-                # ---- Barra de acciones masivas ----
-                st.markdown(
-                    "**Acciones rápidas** — aplica a TODOS los golpes a la vez:"
-                )
-                bcols = st.columns([1.4, 1.4, 1, 1, 1])
-                with bcols[0]:
-                    bulk_tipo = st.selectbox(
-                        "Tipo masivo",
-                        PUNCH_TYPES,
-                        index=PUNCH_TYPES.index(st.session_state.default_punch),
-                        key="bulk_tipo_select",
-                        label_visibility="collapsed",
-                    )
-                with bcols[1]:
-                    bulk_pos = st.selectbox(
-                        "Posición masiva",
-                        POSITIONS,
-                        index=POSITIONS.index(st.session_state.default_position),
-                        key="bulk_pos_select",
-                        label_visibility="collapsed",
-                    )
-                with bcols[2]:
-                    if st.button(
-                        "Aplicar tipo",
-                        use_container_width=True,
-                        help="Asigna ese tipo a TODOS los golpes",
-                    ):
-                        st.session_state.hits_df["tipo"] = bulk_tipo
-                        st.session_state.pop("hits_editor", None)
-                        st.rerun()
-                with bcols[3]:
-                    if st.button(
-                        "Aplicar pos.",
-                        use_container_width=True,
-                        help="Asigna esa posición a TODOS los golpes",
-                    ):
-                        st.session_state.hits_df["posicion"] = bulk_pos
-                        st.session_state.pop("hits_editor", None)
-                        st.rerun()
-                with bcols[4]:
-                    if st.button(
-                        "Invertir sel.",
-                        use_container_width=True,
-                        help="Invierte qué golpes están marcados para guardar",
-                    ):
-                        st.session_state.hits_df["guardar"] = ~st.session_state.hits_df[
-                            "guardar"
-                        ].astype(bool)
-                        st.session_state.pop("hits_editor", None)
-                        st.rerun()
-
-                # ---- Editor por fila ----
-                # OJO: pasamos una copia para que el widget no muta hits_df
-                # directamente; las ediciones se aplican vía _sync_hits_editor.
-                st.data_editor(
-                    st.session_state.hits_df.copy(),
-                    column_config={
-                        "guardar": st.column_config.CheckboxColumn(
-                            "✓",
-                            help="Marca para guardar este golpe",
-                            width="small",
-                        ),
-                        "golpe": st.column_config.NumberColumn(
-                            "#", disabled=True, width="small"
-                        ),
-                        "tiempo": st.column_config.TextColumn(
-                            "Tiempo",
-                            disabled=True,
-                            help="Momento aproximado del pico",
-                        ),
-                        "pico_mag": st.column_config.NumberColumn(
-                            "Pico (G)", disabled=True, format="%.2f"
-                        ),
-                        "tipo": st.column_config.SelectboxColumn(
-                            "Tipo", options=PUNCH_TYPES, required=True
-                        ),
-                        "posicion": st.column_config.SelectboxColumn(
-                            "Posición", options=POSITIONS, required=True
-                        ),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key="hits_editor",
-                    on_change=_sync_hits_editor,
-                )
-                # Defensa por si on_change no se disparase (cambios programáticos).
-                _sync_hits_editor()
-
-                current = st.session_state.hits_df
-                current_labels = (
-                    current["tipo"].astype(str) + "_" + current["posicion"].astype(str)
-                )
-                to_save_mask = current["guardar"].astype(bool)
-                n_selected = int(to_save_mask.sum())
-
-                # ---- Resumen vivo por etiqueta (chips de colores) ----
-                counts = current_labels[to_save_mask].value_counts()
-                if len(counts) > 0:
-                    palette = [
-                        "#1f77b4",
-                        "#ff7f0e",
-                        "#2ca02c",
-                        "#d62728",
-                        "#9467bd",
-                        "#8c564b",
-                        "#e377c2",
-                        "#7f7f7f",
-                        "#bcbd22",
-                        "#17becf",
-                    ]
-                    chips_html = []
-                    for i, label in enumerate(counts.index):
-                        color = palette[i % len(palette)]
-                        chips_html.append(
-                            f'<span style="background:{color};color:#fff;'
-                            "padding:3px 10px;border-radius:12px;margin:2px;"
-                            'display:inline-block;font-size:0.85rem;'
-                            f'font-weight:600;">{label} · {int(counts[label])}</span>'
-                        )
-                    st.markdown(
-                        '<div style="margin:6px 0 12px 0;">'
-                        + "".join(chips_html)
-                        + "</div>",
-                        unsafe_allow_html=True,
-                    )
-
-                # ---- Inspector de golpe individual ----
-                with st.expander(
-                    f"🔍 Inspeccionar un golpe ({len(windows)} disponibles)",
-                    expanded=False,
-                ):
-                    inspect_n = st.number_input(
-                        "Número de golpe",
-                        min_value=1,
-                        max_value=int(len(windows)),
-                        value=1,
-                        step=1,
-                        key="hit_inspector_idx",
-                    )
-                    idx_i = int(inspect_n) - 1
-                    if 0 <= idx_i < len(windows):
-                        w = windows[idx_i]
-                        fig_i = make_subplots(
-                            rows=2,
-                            cols=1,
-                            shared_xaxes=True,
-                            subplot_titles=("Sensor 1", "Sensor 2"),
-                            vertical_spacing=0.12,
-                        )
-                        for ax_i, color, name in [
-                            (0, "#1f77b4", "x1"),
-                            (1, "#2ca02c", "y1"),
-                            (2, "#d62728", "z1"),
-                        ]:
-                            fig_i.add_trace(
-                                go.Scatter(
-                                    y=w[:, ax_i],
-                                    name=name,
-                                    line=dict(color=color, width=1.5),
-                                ),
-                                row=1,
-                                col=1,
-                            )
-                        for ax_i, color, name in [
-                            (3, "#9467bd", "x2"),
-                            (4, "#8c564b", "y2"),
-                            (5, "#e377c2", "z2"),
-                        ]:
-                            fig_i.add_trace(
-                                go.Scatter(
-                                    y=w[:, ax_i],
-                                    name=name,
-                                    line=dict(color=color, width=1.5),
-                                ),
-                                row=2,
-                                col=1,
-                            )
-                        fig_i.update_layout(
-                            height=320, margin=dict(t=40, b=10), showlegend=True
-                        )
-                        st.plotly_chart(fig_i, use_container_width=True)
-                        row_i = current.iloc[idx_i]
-                        flag = "✓ se guardará" if bool(row_i["guardar"]) else "✗ NO se guardará"
-                        st.caption(
-                            f"Etiqueta: **{row_i['tipo']}_{row_i['posicion']}** · "
-                            f"Pico: **{row_i['pico_mag']} G** · {flag}"
-                        )
-
-                st.metric("Golpes seleccionados para guardar", n_selected)
-
-                if st.button(
-                    f"Guardar {n_selected} golpe(s) seleccionado(s)",
-                    type="primary",
-                    use_container_width=True,
-                    disabled=(n_selected == 0),
-                ):
-                    selected = current[to_save_mask]
-                    indices = selected["golpe"].values.astype(int) - 1
-                    X_to_save = windows[indices]
-                    y_to_save = (
-                        selected["tipo"].astype(str)
-                        + "_"
-                        + selected["posicion"].astype(str)
-                    ).values.astype(str)
-                    total, _ = save_dataset(X_to_save, y_to_save)
-                    st.success(
-                        f"Guardadas {n_selected} muestra(s) — total en dataset: {total}"
-                    )
-                    # Reset for next recording
-                    st.session_state.end_time = None
-                    st.session_state.merged_df = None
-                    st.session_state.peaks = None
-                    st.session_state.windows = None
-                    st.session_state.hits_dirty = True
-                    for _k in ("hits_df", "hits_editor"):
-                        st.session_state.pop(_k, None)
-                    st.rerun()
-
-                if st.button(
-                    "Descartar y nueva grabación",
-                    type="secondary",
-                    use_container_width=True,
-                ):
-                    st.session_state.end_time = None
-                    st.session_state.merged_df = None
-                    st.session_state.peaks = None
-                    st.session_state.windows = None
-                    st.session_state.hits_dirty = True
-                    for _k in ("hits_df", "hits_editor"):
-                        st.session_state.pop(_k, None)
-                    st.rerun()
+                # Toda la UI interactiva (editor, acciones masivas, inspector,
+                # botones de guardar/descartar) vive en un fragment para que
+                # editar una celda no dispare un rerun de TODO el script — en la
+                # Pi eso recargaba el .npz y reconstruía el Plotly cada vez.
+                render_hits_editor()

@@ -15,6 +15,16 @@ pub struct AppState {
     pub ws_tx: Arc<broadcast::Sender<PunchEvent>>,
     pub active_training: Arc<Mutex<Option<ActiveTraining>>>,
     pub remote_api_url: Option<String>,
+    /// MACs configurados vía DEVICE_MAC_1/2. Se exponen en `/sensors` para
+    /// que el UI pueda mostrar online/offline aunque un sensor lleve horas
+    /// caído (un MAC sin ninguna fila histórica seguirá listado).
+    pub configured_macs: Vec<ConfiguredSensor>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ConfiguredSensor {
+    pub index: u8,
+    pub mac: String,
 }
 
 pub struct ActiveTraining {
@@ -43,11 +53,29 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("SQLite initialized at {}", db_path);
 
     let (ws_tx, _ws_rx) = broadcast::channel::<PunchEvent>(256);
+
+    // Recoge los MACs configurados antes de mover los Option<String> a la
+    // task BLE: el endpoint /sensors necesita listar SIEMPRE los configurados,
+    // incluso si nunca han enviado datos, para distinguir "sensor caído" de
+    // "sensor no configurado".
+    let mac1_env = env::var("DEVICE_MAC_1").ok();
+    let mac2_env = env::var("DEVICE_MAC_2").ok();
+    let configured_macs: Vec<ConfiguredSensor> = [(1, &mac1_env), (2, &mac2_env)]
+        .into_iter()
+        .filter_map(|(idx, m)| {
+            m.as_ref().map(|mac| ConfiguredSensor {
+                index: idx,
+                mac: mac.clone(),
+            })
+        })
+        .collect();
+
     let state = Arc::new(AppState {
         db: pool.clone(),
         ws_tx: Arc::new(ws_tx),
         active_training: Arc::new(Mutex::new(None)),
         remote_api_url: env::var("API_BASE_URL").ok(),
+        configured_macs,
     });
 
     // mDNS discovery — delegated to the host's avahi-daemon via DBus
@@ -72,8 +100,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // BLE ingestion task
-    let mac1 = env::var("DEVICE_MAC_1").ok();
-    let mac2 = env::var("DEVICE_MAC_2").ok();
+    let mac1 = mac1_env;
+    let mac2 = mac2_env;
     if mac1.is_some() || mac2.is_some() {
         let state_clone = state.clone();
         tokio::spawn(async move {

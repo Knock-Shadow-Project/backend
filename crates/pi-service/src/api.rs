@@ -28,6 +28,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/health", get(health))
+        .route("/sensors", get(sensors_status))
         .route("/training/active", get(active_training))
         .route("/training/start", post(start_training))
         .route("/training/stop", post(stop_training))
@@ -43,6 +44,69 @@ async fn index() -> impl IntoResponse {
 
 async fn health(State(_state): State<Arc<AppState>>) -> impl IntoResponse {
     axum::Json(serde_json::json!({ "status": "ok", "service": "pi-service" }))
+}
+
+/// Estado por sensor para el UI: cuánto hace que enviaron datos.
+///
+/// Devuelve SIEMPRE los MACs configurados en `DEVICE_MAC_1/2`, aunque
+/// alguno nunca haya escrito. `seconds_ago = null` ⇒ nunca visto.
+/// El status lo computa el cliente desde `seconds_ago` (umbrales en el
+/// HTML), así no tenemos que recompilar el servicio para ajustarlos.
+#[derive(Serialize)]
+struct SensorStatus {
+    index: u8,
+    mac: String,
+    device_name: Option<String>,
+    last_seen: Option<String>,
+    seconds_ago: Option<f64>,
+}
+
+async fn sensors_status(
+    State(state): State<Arc<AppState>>,
+) -> Result<axum::Json<Vec<SensorStatus>>, (axum::http::StatusCode, String)> {
+    let mut out = Vec::with_capacity(state.configured_macs.len());
+    for s in &state.configured_macs {
+        // received_at se guarda con strftime('%Y-%m-%d %H:%M:%f','now') (ver db.rs).
+        // strftime('now','%s.%f') - max(juliantime) daría el delta pero sqlite
+        // no expone fácil ese cálculo cross-timezone; hacemos el delta en Rust.
+        let row: Option<(String, Option<String>)> = sqlx::query_as(
+            "SELECT received_at, device_name
+             FROM ble_samples
+             WHERE device_mac = ?1
+             ORDER BY received_at DESC
+             LIMIT 1",
+        )
+        .bind(&s.mac)
+        .fetch_optional(&state.db)
+        .await
+        .map_err(|e| (axum::http::StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+        let (last_seen, device_name, seconds_ago) = match row {
+            Some((ts, name)) => {
+                // El timestamp viene en formato "YYYY-MM-DD HH:MM:SS.fff" en UTC.
+                // Le adjuntamos "Z" para que el cliente pueda Date.parse() sin
+                // ambigüedades de zona horaria.
+                let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%d %H:%M:%S%.f")
+                    .ok()
+                    .map(|n| n.and_utc());
+                let secs = parsed.map(|t| {
+                    (chrono::Utc::now() - t).num_milliseconds() as f64 / 1000.0
+                });
+                let iso = parsed.map(|t| t.to_rfc3339());
+                (iso, name, secs)
+            }
+            None => (None, None, None),
+        };
+
+        out.push(SensorStatus {
+            index: s.index,
+            mac: s.mac.clone(),
+            device_name,
+            last_seen,
+            seconds_ago,
+        });
+    }
+    Ok(axum::Json(out))
 }
 
 #[derive(Deserialize)]

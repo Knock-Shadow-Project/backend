@@ -1,7 +1,6 @@
 # Pinned subset for the Streamlit UI container (Dockerfile.ml-app).
 # Keep in sync with ml/uv.lock; see requirements.txt for the bump procedure.
 streamlit==1.57.0
-streamlit-keyup==0.3.0
 plotly==6.7.0
 pandas==3.0.2
 numpy==2.4.4

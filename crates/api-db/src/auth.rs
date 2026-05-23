@@ -84,42 +84,6 @@ pub fn decode_token(token: &str) -> Result<TokenClaims, jsonwebtoken::errors::Er
     )
     .map(|data| data.claims)
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::sync::Mutex;
-
-    // Serialize tests touching the JWT_SECRET OnceLock and process env.
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    #[test]
-    fn init_jwt_secret_rejects_unset() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        unsafe { std::env::remove_var("JWT_SECRET") };
-        let err = init_jwt_secret().unwrap_err();
-        assert!(err.contains("JWT_SECRET"));
-    }
-
-    #[test]
-    fn init_jwt_secret_rejects_too_short() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("JWT_SECRET", "short") };
-        let err = init_jwt_secret().unwrap_err();
-        assert!(err.contains("at least"));
-        unsafe { std::env::remove_var("JWT_SECRET") };
-    }
-
-    #[test]
-    fn init_jwt_secret_rejects_empty() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        unsafe { std::env::set_var("JWT_SECRET", "   ") };
-        let err = init_jwt_secret().unwrap_err();
-        assert!(err.contains("empty"));
-        unsafe { std::env::remove_var("JWT_SECRET") };
-    }
-}
-
 pub fn hash_password(password: &str) -> Result<String, bcrypt::BcryptError> {
     bcrypt::hash(password, bcrypt::DEFAULT_COST)
 }
@@ -237,4 +201,39 @@ pub async fn register_handler(
         first_name: usuario.first_name,
         email: usuario.email,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // Serialize tests touching the JWT_SECRET OnceLock and process env.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn init_jwt_secret_rejects_unset() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("JWT_SECRET") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("JWT_SECRET"));
+    }
+
+    #[test]
+    fn init_jwt_secret_rejects_too_short() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("JWT_SECRET", "short") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("at least"));
+        unsafe { std::env::remove_var("JWT_SECRET") };
+    }
+
+    #[test]
+    fn init_jwt_secret_rejects_empty() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("JWT_SECRET", "   ") };
+        let err = init_jwt_secret().unwrap_err();
+        assert!(err.contains("empty"));
+        unsafe { std::env::remove_var("JWT_SECRET") };
+    }
 }

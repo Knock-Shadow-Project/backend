@@ -15,7 +15,6 @@ dependencies = [
     "scipy>=1.17.1",
     "seaborn>=0.13.2",
     "streamlit>=1.57.0",
-    "streamlit-keyup>=0.2.4",
     "structlog>=25.4.0",
     "torch>=2.11.0",
     "websockets>=15.0",

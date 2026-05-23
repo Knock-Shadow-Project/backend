@@ -1,7 +1,19 @@
-"""Sincroniza ble_samples desde SQLite (Raspberry Pi) a PostgreSQL (cloud)."""
+"""Sincroniza ble_samples desde SQLite (Raspberry Pi) a PostgreSQL (cloud).
+
+DEPRECATED (2026-05): el cloud ya no almacena muestras crudas (`ble_samples`).
+La política de producto es guardar sólo datos procesados (golpes detectados
+vía la API). Este script vuelca las filas crudas del Pi a Postgres, así que
+contradice esa política y por defecto se niega a ejecutarse.
+
+Sigue presente porque es útil en investigaciones puntuales: si en algún
+incidente se necesita auditar muestras crudas del Pi en el cloud, se puede
+forzar con `--allow-deprecated`. Es un escape hatch consciente, no algo a
+incluir en cron jobs.
+"""
 import argparse
 import os
 import sqlite3
+import sys
 from datetime import datetime, timezone
 
 import psycopg2
@@ -12,6 +24,13 @@ from logging_config import configure_logging, get_logger
 log = get_logger(__name__)
 
 DEFAULT_BATCH = 1000
+
+DEPRECATION_NOTICE = (
+    "sync_ble_to_cloud is DEPRECATED: cloud Postgres no longer stores raw "
+    "ble_samples by policy (see crates/bt-reader/src/storage.rs and "
+    "ml/pi_db_janitor.py). Pass --allow-deprecated to override for a "
+    "one-off investigation."
+)
 
 # Timeout y PRAGMAs alineados con pi-service/db.rs y ml/pi_inference.py.
 # El archivo SQLite se comparte por Docker volume con 3 contenedores; abrirlo
@@ -114,9 +133,13 @@ def sync(sqlite_path: str, pg_url: str, batch_size: int, dry_run: bool):
     log.info("sync_complete", total_exported=synced)
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Exporta ble_samples de la Raspberry Pi (SQLite) al PostgreSQL del cloud."
+        description=(
+            "[DEPRECATED] Exporta ble_samples de la Raspberry Pi (SQLite) al "
+            "PostgreSQL del cloud. El cloud ya no almacena muestras crudas; "
+            "usar sólo con --allow-deprecated para investigaciones puntuales."
+        )
     )
     parser.add_argument(
         "--sqlite",
@@ -141,11 +164,28 @@ def main():
         action="store_true",
         help="Muestra cuántas filas se sincronizarían sin insertar",
     )
+    parser.add_argument(
+        "--allow-deprecated",
+        action="store_true",
+        help=(
+            "Permite ejecutar el script aunque viole la política de no "
+            "guardar muestras crudas en Postgres (ver docstring)."
+        ),
+    )
     args = parser.parse_args()
 
     configure_logging(service="sync_ble_to_cloud")
+    if not args.allow_deprecated:
+        # `print` antes de `log` para que el operador vea el mensaje aunque
+        # el structlog no esté configurado a stderr (caso típico al
+        # invocarlo desde shell sin pipeline JSON).
+        print(DEPRECATION_NOTICE, file=sys.stderr)
+        log.error("aborted_deprecated_invocation")
+        return 2
+    log.warning("running_deprecated_script", reason="--allow-deprecated set")
     sync(args.sqlite, args.pg_url, args.batch_size, args.dry_run)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

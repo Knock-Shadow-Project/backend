@@ -36,8 +36,12 @@ services:
         restart: unless-stopped
         environment:
             DB_PATH: /data/pi_data.db
-            SENSOR_MAC_1: ${SENSOR_MAC_1:-DF:65:81:D0:D7:E5}
-            SENSOR_MAC_2: ${SENSOR_MAC_2:-CB:01:10:3E:0D:61}
+            # Same source of truth as pi-service / ml-app: DEVICE_MAC_*.
+            # Antes apuntaba a SENSOR_MAC_* y caía al default cuando .env
+            # solo definía DEVICE_MAC_*, así que pi-inference filtraba por
+            # un MAC inexistente y `merge_sensors` siempre devolvía vacío.
+            SENSOR_MAC_1: ${DEVICE_MAC_1:-DF:65:81:D0:D7:E5}
+            SENSOR_MAC_2: ${DEVICE_MAC_2:-CB:01:10:3E:0D:61}
         volumes:
             - pi-data:/data
             - ./ml/model:/app/model
@@ -71,6 +75,39 @@ services:
             - app.py
             - --server.port=8501
             - --server.address=0.0.0.0
+
+    # Janitor de la base SQLite local. Borra muestras crudas (`ble_samples`)
+    # más viejas que RETENTION_HOURS y trunca el WAL, para que la microSD
+    # del Pi no se llene. Sin este sidecar el archivo crece sin límite
+    # (pi-service inserta ~100 filas/s y nunca borra).
+    # Detalles del borrado/checkpoint: ver `ml/pi_db_janitor.py`.
+    pi-db-janitor:
+        image: python:3.12-slim
+        container_name: knockshadow-pi-db-janitor
+        restart: unless-stopped
+        environment:
+            DB_PATH: /data/pi_data.db
+            RETENTION_HOURS: "${PI_DB_RETENTION_HOURS:-1}"
+            SLEEP_SECONDS: "${PI_DB_JANITOR_SLEEP:-300}"
+            # Tope de filas a borrar por pasada. El default (2M) limita
+            # cada pasada a ~40 s; subirlo a 20M+ acelera el drenaje
+            # inicial cuando la DB ya está saturada (millones de filas
+            # atrasadas). En estado estable se borran ~60k/pasada y el
+            # tope nunca se alcanza.
+            MAX_ROWS_PER_PASS: "${PI_DB_MAX_ROWS_PER_PASS:-2000000}"
+            # Por defecto NO vaciamos en cada arranque: VACUUM toma lock
+            # exclusivo y bloquea a pi-service. Para reclamar espacio
+            # acumulado (ej. tras desplegar este sidecar por primera vez),
+            # arrancar puntualmente con PI_DB_VACUUM_ON_START=1.
+            VACUUM_ON_START: "${PI_DB_VACUUM_ON_START:-0}"
+        volumes:
+            - pi-data:/data
+            # Script montado :ro para que cambios en el repo se apliquen al
+            # reiniciar el contenedor, sin rebuild de imagen propia.
+            - ./ml/pi_db_janitor.py:/app/pi_db_janitor.py:ro
+        # `-u` desactiva el buffering de stdout/stderr: `docker logs`
+        # muestra los eventos del janitor en tiempo real.
+        command: ["python", "-u", "/app/pi_db_janitor.py"]
 
 volumes:
     pi-data:
