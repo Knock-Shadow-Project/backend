@@ -9,15 +9,23 @@ mod db;
 mod mdns;
 mod sync;
 
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct AccelSample {
+    pub mac: String,
+    pub device_name: String,
+    pub x: f32,
+    pub y: f32,
+    pub z: f32,
+    pub ts: u64,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub db: sqlx::SqlitePool,
     pub ws_tx: Arc<broadcast::Sender<PunchEvent>>,
+    pub accel_tx: Arc<broadcast::Sender<AccelSample>>,
     pub active_training: Arc<Mutex<Option<ActiveTraining>>>,
     pub remote_api_url: Option<String>,
-    /// MACs configurados vía DEVICE_MAC_1/2. Se exponen en `/sensors` para
-    /// que el UI pueda mostrar online/offline aunque un sensor lleve horas
-    /// caído (un MAC sin ninguna fila histórica seguirá listado).
     pub configured_macs: Vec<ConfiguredSensor>,
 }
 
@@ -34,7 +42,7 @@ pub struct ActiveTraining {
     pub start_time: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct PunchEvent {
     pub class_name: String,
     pub limb: String,
@@ -53,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("SQLite initialized at {}", db_path);
 
     let (ws_tx, _ws_rx) = broadcast::channel::<PunchEvent>(256);
+    let (accel_tx, _accel_rx) = broadcast::channel::<AccelSample>(512);
 
     // Recoge los MACs configurados antes de mover los Option<String> a la
     // task BLE: el endpoint /sensors necesita listar SIEMPRE los configurados,
@@ -70,9 +79,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
 
+    let accel_tx_arc = Arc::new(accel_tx);
+
     let state = Arc::new(AppState {
         db: pool.clone(),
         ws_tx: Arc::new(ws_tx),
+        accel_tx: accel_tx_arc.clone(),
         active_training: Arc::new(Mutex::new(None)),
         remote_api_url: env::var("API_BASE_URL").ok(),
         configured_macs,
@@ -117,59 +129,87 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("No DEVICE_MAC configured, BLE task skipped");
     }
 
-    // Punch broadcaster task: lee detected_punches y emite por WS
-    let state_clone = state.clone();
-    tokio::spawn(async move {
-        let mut last_id: i64 = 0;
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(100));
-        loop {
-            interval.tick().await;
-            let rows =
-                sqlx::query_as::<_, (i64, String, String, String, Option<f64>, f64, String)>(
-                    "SELECT id, class_name, limb, position, power, prob, detected_at
-                 FROM detected_punches WHERE id > ?1 ORDER BY id ASC",
-                )
-                .bind(last_id)
-                .fetch_all(&state_clone.db)
-                .await;
+    // MQTT: publish accel data + subscribe to punch events from pi-inference.
+    // Punch events arrive via topic `knockshadow/punches` (published by
+    // pi-inference) and are forwarded to the WS broadcast channel, replacing
+    // the old SQLite polling loop. Accel data is still published for external
+    // consumers (dashboards, future features).
+    {
+        let mqtt_host = env::var("MQTT_HOST").unwrap_or_else(|_| "127.0.0.1".to_string());
+        let mqtt_port: u16 = env::var("MQTT_PORT")
+            .unwrap_or_else(|_| "1883".to_string())
+            .parse()
+            .unwrap_or(1883);
+        info!("MQTT started (broker {mqtt_host}:{mqtt_port})");
 
-            match rows {
-                Ok(punches) => {
-                    for (id, class_name, limb, position, power, prob, detected_at) in punches {
-                        last_id = id;
-                        // Normaliza a RFC3339 con sufijo `Z`. SQLite guarda
-                        // detected_at como `YYYY-MM-DD HH:MM:SS` sin TZ; el UI
-                        // Date.parse() asume hora local sin sufijo y eso pinta
-                        // "Xh ago" con el offset de la zona horaria.
-                        let detected_at_iso = chrono::NaiveDateTime::parse_from_str(
-                            &detected_at,
-                            "%Y-%m-%d %H:%M:%S%.f",
-                        )
-                        .or_else(|_| {
-                            chrono::NaiveDateTime::parse_from_str(
-                                &detected_at,
-                                "%Y-%m-%d %H:%M:%S",
-                            )
-                        })
-                        .map(|n| n.and_utc().to_rfc3339())
-                        .unwrap_or(detected_at);
-                        let event = PunchEvent {
-                            class_name,
-                            limb,
-                            position,
-                            power,
-                            prob,
-                            detected_at: detected_at_iso,
-                        };
-                        let _ = state_clone.ws_tx.send(event);
+        let mut mqtt_rx = accel_tx_arc.subscribe();
+        let ws_tx_mqtt = state.ws_tx.clone();
+
+        tokio::spawn(async move {
+            let mut mqttoptions =
+                rumqttc::MqttOptions::new("pi-service", &mqtt_host, mqtt_port);
+            mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
+            let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions, 256);
+
+            if let Err(e) = client
+                .subscribe("knockshadow/punches", rumqttc::QoS::AtLeastOnce)
+                .await
+            {
+                tracing::error!("MQTT subscribe to knockshadow/punches failed: {e}");
+            }
+
+            // Accel publisher task (downsample 1:5)
+            let client_pub = client.clone();
+            tokio::spawn(async move {
+                let mut skip_counter: u32 = 0;
+                loop {
+                    match mqtt_rx.recv().await {
+                        Ok(sample) => {
+                            skip_counter += 1;
+                            if skip_counter % 5 != 0 {
+                                continue;
+                            }
+                            let topic = format!(
+                                "knockshadow/sensors/{}/accel",
+                                sample.mac.replace(':', "")
+                            );
+                            let payload = serde_json::to_string(&sample).unwrap_or_default();
+                            let _ = client_pub
+                                .publish(&topic, rumqttc::QoS::AtMostOnce, false, payload)
+                                .await;
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            tracing::debug!("MQTT lagged {n} accel samples");
+                        }
+                        Err(_) => break,
                     }
                 }
-                Err(e) => {
-                    tracing::debug!("Punch poll error: {}", e);
+            });
+
+            // Eventloop driver: handles reconnection + incoming punch messages
+            loop {
+                match eventloop.poll().await {
+                    Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(msg))) => {
+                        if msg.topic == "knockshadow/punches" {
+                            match serde_json::from_slice::<PunchEvent>(&msg.payload) {
+                                Ok(event) => {
+                                    let _ = ws_tx_mqtt.send(event);
+                                }
+                                Err(e) => {
+                                    tracing::debug!("Invalid punch MQTT payload: {e}");
+                                }
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        tracing::warn!("MQTT eventloop error: {e}; reconnecting in 3s");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                    }
                 }
             }
-        }
-    });
+        });
+    }
 
     // HTTP API
     let app = api::router(state);

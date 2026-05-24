@@ -74,6 +74,25 @@ impl EmailService {
         let resp = self.client.emails.send(options).await?;
         Ok(resp.id.to_string())
     }
+
+    pub async fn send_password_reset(&self, destinatario: &str, token: &str) -> ResendResult<String> {
+        let url = format!(
+            "{}/reset-password?token={}",
+            self.app_base_url.trim_end_matches('/'),
+            token
+        );
+        let subject = "Restablece tu contraseña en KnockShadow";
+        let html = construir_html_reset_password(destinatario, &url);
+        let text = construir_texto_reset_password(&url);
+
+        let to = [destinatario];
+        let options = CreateEmailBaseOptions::new(self.from.clone(), to, subject)
+            .with_html(&html)
+            .with_text(&text);
+
+        let resp = self.client.emails.send(options).await?;
+        Ok(resp.id.to_string())
+    }
 }
 
 /// HTML del email de confirmación. Estilos inline para máxima compatibilidad
@@ -144,6 +163,73 @@ fn construir_texto_confirmacion(url: &str) -> String {
          {url}\n\
          \n\
          El enlace caduca en 24 horas. Si no te registraste, ignora este mensaje.\n"
+    )
+}
+
+fn construir_html_reset_password(destinatario: &str, url: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Restablece tu contraseña</title>
+  </head>
+  <body style="margin:0;padding:0;background-color:#131315;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#e5e1e4;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#131315;padding:32px 16px;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background-color:#1b1b1d;border:1px solid #27272a;border-radius:12px;padding:32px;">
+            <tr>
+              <td style="padding-bottom:24px;border-bottom:1px solid #27272a;">
+                <h1 style="margin:0;color:#ff525c;font-size:22px;font-weight:900;letter-spacing:3px;font-style:italic;">KNOCKSHADOW</h1>
+                <p style="margin:6px 0 0;color:#71717a;font-size:11px;letter-spacing:2px;text-transform:uppercase;">Sistema de telemetría biométrica</p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px 0 8px;">
+                <h2 style="margin:0;color:#ffffff;font-size:24px;font-weight:900;">Restablece tu contraseña, atleta.</h2>
+                <p style="margin:12px 0 0;color:#a1a1aa;font-size:14px;line-height:22px;">
+                  Recibimos una solicitud para restablecer la contraseña de <strong style="color:#ffffff;">{destinatario}</strong>. Pulsa el botón para crear una nueva.
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding:24px 0;">
+                <a href="{url}" style="display:inline-block;background-color:#ff525c;color:#410008;font-weight:900;letter-spacing:2px;text-decoration:none;padding:14px 28px;border-radius:8px;font-size:14px;">RESTABLECER CONTRASEÑA</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:8px;">
+                <p style="margin:0;color:#71717a;font-size:11px;line-height:18px;">
+                  Si el botón no funciona, copia este enlace en tu navegador:<br />
+                  <a href="{url}" style="color:#6cd7d8;word-break:break-all;">{url}</a>
+                </p>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding-top:24px;border-top:1px solid #27272a;">
+                <p style="margin:0;color:#52525b;font-size:10px;letter-spacing:1px;text-align:center;text-transform:uppercase;">
+                  Si no solicitaste este cambio, ignora este correo. El enlace caduca en 1h.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>"#
+    )
+}
+
+fn construir_texto_reset_password(url: &str) -> String {
+    format!(
+        "KNOCKSHADOW — Restablece tu contraseña\n\
+         \n\
+         Pulsa el siguiente enlace para crear una nueva contraseña:\n\
+         {url}\n\
+         \n\
+         El enlace caduca en 1 hora. Si no solicitaste este cambio, ignora este mensaje.\n"
     )
 }
 

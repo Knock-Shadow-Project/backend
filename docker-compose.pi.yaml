@@ -34,14 +34,15 @@ services:
             dockerfile: Dockerfile.pi-inference
         container_name: knockshadow-pi-inference
         restart: unless-stopped
+        # Host networking so pi-inference can reach nanomq on localhost:1883.
+        network_mode: host
         environment:
             DB_PATH: /data/pi_data.db
             # Same source of truth as pi-service / ml-app: DEVICE_MAC_*.
-            # Antes apuntaba a SENSOR_MAC_* y caía al default cuando .env
-            # solo definía DEVICE_MAC_*, así que pi-inference filtraba por
-            # un MAC inexistente y `merge_sensors` siempre devolvía vacío.
             SENSOR_MAC_1: ${DEVICE_MAC_1:-DF:65:81:D0:D7:E5}
             SENSOR_MAC_2: ${DEVICE_MAC_2:-CB:01:10:3E:0D:61}
+            MQTT_HOST: ${MQTT_HOST:-127.0.0.1}
+            MQTT_PORT: ${MQTT_PORT:-1883}
         volumes:
             - pi-data:/data
             - ./ml/model:/app/model
@@ -50,8 +51,6 @@ services:
             - pi_inference.py
             - --user-id
             - "${USER_ID:-1}"
-        # On the Pi the inference container does NOT need Bluetooth privileges;
-        # it only needs access to the shared SQLite volume.
 
     ml-app:
         build:
@@ -108,6 +107,14 @@ services:
         # `-u` desactiva el buffering de stdout/stderr: `docker logs`
         # muestra los eventos del janitor en tiempo real.
         command: ["python", "-u", "/app/pi_db_janitor.py"]
+
+    nanomq:
+        image: emqx/nanomq:0.22-slim
+        container_name: knockshadow-nanomq
+        restart: unless-stopped
+        network_mode: host
+        environment:
+            NANOMQ_BROKER_URL: "nmq-tcp://0.0.0.0:1883"
 
 volumes:
     pi-data:

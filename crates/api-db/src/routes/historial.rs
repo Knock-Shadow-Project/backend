@@ -8,13 +8,8 @@ use axum::{
 use crate::models::{CreateHistorial, Historial, HistorialDetail, Pagination, UpdateHistorial};
 use crate::state::AppState;
 
-/// Columnas planas de HISTORIAL. Tras la migración 002 la PK es `id_historial`
-/// (antes era el par `(id_entrenamiento, id_golpe)`).
 const HISTORIAL_COLUMNS: &str = "id_historial, id_entrenamiento, id_golpe_lanzado, id_golpe_esperado, potencia, es_correcto, fecha_impacto";
 
-/// Selección con JOIN al catálogo GOLPE para el endpoint de lectura
-/// enriquecida (`HistorialDetail`). Se alinea con las renombras de la
-/// migración 002: `id_golpe_lanzado` es el golpe efectivamente detectado.
 const HISTORIAL_DETAIL_SELECT: &str = "h.id_historial, h.id_entrenamiento, h.id_golpe_lanzado, h.id_golpe_esperado, h.potencia, h.es_correcto, h.fecha_impacto, g.nombre, g.extremidad, g.posicion";
 
 pub fn routes() -> Router<AppState> {
@@ -27,12 +22,16 @@ pub fn routes() -> Router<AppState> {
         .route("/trainings/{id}/history", get(list_history_by_training))
 }
 
-async fn list_history(
+#[utoipa::path(get, path = "/history",
+    params(Pagination),
+    responses((status = 200, body = Vec<HistorialDetail>)),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn list_history(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<HistorialDetail>>, StatusCode> {
-    // historial puede crecer ilimitadamente (1 fila por golpe registrado).
-    // Pagar página por página evita devolver megabytes en un solo endpoint.
     let limit = pagination.resolved_limit();
     let offset = pagination.resolved_offset();
     let query = format!(
@@ -55,7 +54,16 @@ async fn list_history(
     Ok(Json(items))
 }
 
-async fn get_history(
+#[utoipa::path(get, path = "/history/{history_id}",
+    params(("history_id" = i32, Path,)),
+    responses(
+        (status = 200, body = Historial),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn get_history(
     State(state): State<AppState>,
     Path(history_id): Path<i32>,
 ) -> Result<Json<Historial>, StatusCode> {
@@ -77,12 +85,16 @@ async fn get_history(
     Ok(Json(item))
 }
 
-async fn create_history(
+#[utoipa::path(post, path = "/history",
+    request_body = CreateHistorial,
+    responses((status = 200, body = Historial)),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn create_history(
     State(state): State<AppState>,
     Json(payload): Json<CreateHistorial>,
 ) -> Result<Json<Historial>, StatusCode> {
-    // Los DEFAULT de PostgreSQL (es_correcto=TRUE, fecha_impacto=CURRENT_TIMESTAMP)
-    // se preservan vía COALESCE cuando el cliente no manda valor.
     let query = format!(
         "INSERT INTO historial (id_entrenamiento, id_golpe_lanzado, id_golpe_esperado, potencia, es_correcto, fecha_impacto)
          VALUES ($1, $2, $3, $4, COALESCE($5, TRUE), COALESCE($6, CURRENT_TIMESTAMP))
@@ -105,7 +117,17 @@ async fn create_history(
     Ok(Json(item))
 }
 
-async fn update_history(
+#[utoipa::path(put, path = "/history/{history_id}",
+    params(("history_id" = i32, Path,)),
+    request_body = UpdateHistorial,
+    responses(
+        (status = 200, body = Historial),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn update_history(
     State(state): State<AppState>,
     Path(history_id): Path<i32>,
     Json(payload): Json<UpdateHistorial>,
@@ -140,7 +162,16 @@ async fn update_history(
     Ok(Json(item))
 }
 
-async fn delete_history(
+#[utoipa::path(delete, path = "/history/{history_id}",
+    params(("history_id" = i32, Path,)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn delete_history(
     State(state): State<AppState>,
     Path(history_id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {
@@ -158,7 +189,13 @@ async fn delete_history(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_history_by_training(
+#[utoipa::path(get, path = "/trainings/{id}/history",
+    params(("id" = i32, Path,), Pagination),
+    responses((status = 200, body = Vec<HistorialDetail>)),
+    security(("bearer_auth" = [])),
+    tag = "History"
+)]
+pub(crate) async fn list_history_by_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Query(pagination): Query<Pagination>,

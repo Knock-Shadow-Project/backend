@@ -18,7 +18,13 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_users(
+#[utoipa::path(get, path = "/users",
+    params(Pagination),
+    responses((status = 200, body = Vec<Usuario>)),
+    security(("bearer_auth" = [])),
+    tag = "Users"
+)]
+pub(crate) async fn list_users(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Usuario>>, StatusCode> {
@@ -41,7 +47,16 @@ async fn list_users(
     Ok(Json(usuarios))
 }
 
-async fn get_user(
+#[utoipa::path(get, path = "/users/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 200, body = Usuario),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Users"
+)]
+pub(crate) async fn get_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Usuario>, StatusCode> {
@@ -61,7 +76,16 @@ async fn get_user(
     Ok(Json(usuario))
 }
 
-async fn create_user(
+#[utoipa::path(post, path = "/users",
+    request_body = CreateUsuario,
+    responses(
+        (status = 200, body = Usuario),
+        (status = 409, description = "Email already registered"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Users"
+)]
+pub(crate) async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUsuario>,
 ) -> Result<Json<Usuario>, (StatusCode, Json<serde_json::Value>)> {
@@ -114,7 +138,17 @@ async fn create_user(
     Ok(Json(usuario))
 }
 
-async fn update_user(
+#[utoipa::path(put, path = "/users/{id}",
+    params(("id" = i32, Path,)),
+    request_body = UpdateUsuario,
+    responses(
+        (status = 200, body = Usuario),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Users"
+)]
+pub(crate) async fn update_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateUsuario>,
@@ -171,7 +205,16 @@ async fn update_user(
     Ok(Json(usuario))
 }
 
-async fn delete_user(
+#[utoipa::path(delete, path = "/users/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Users"
+)]
+pub(crate) async fn delete_user(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {

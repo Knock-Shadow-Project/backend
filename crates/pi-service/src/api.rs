@@ -34,6 +34,7 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/training/stop", post(stop_training))
         .route("/trainings/{id}/punches", get(list_punches))
         .route("/live", get(ws_handler))
+        .route("/live/accel", get(ws_accel_handler))
         .layer(cors)
         .with_state(state)
 }
@@ -325,6 +326,44 @@ async fn handle_socket(mut socket: axum::extract::ws::WebSocket, state: Arc<AppS
                 }
             }
             else => break,
+        }
+    }
+}
+
+async fn ws_accel_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    ws.on_upgrade(move |socket| handle_accel_socket(socket, state))
+}
+
+async fn handle_accel_socket(mut socket: axum::extract::ws::WebSocket, state: Arc<AppState>) {
+    let mut rx = state.accel_tx.subscribe();
+    let mut skip: u32 = 0;
+
+    loop {
+        tokio::select! {
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(axum::extract::ws::Message::Close(_))) | None => break,
+                    _ => {}
+                }
+            }
+            result = rx.recv() => {
+                match result {
+                    Ok(sample) => {
+                        // Downsample 1:3 para no saturar el WS del móvil
+                        skip += 1;
+                        if skip % 3 != 0 { continue; }
+                        let text = serde_json::to_string(&sample).unwrap_or_default();
+                        if socket.send(axum::extract::ws::Message::Text(text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(_) => break,
+                }
+            }
         }
     }
 }

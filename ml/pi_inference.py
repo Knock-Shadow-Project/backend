@@ -1,6 +1,7 @@
 import argparse
 import asyncio
 import datetime
+import json
 import os
 import sqlite3
 import sys
@@ -23,6 +24,10 @@ log = get_logger(__name__)
 POLL_INTERVAL = 1.0
 BUFFER_SECONDS = 5.0
 PROCESSED_TTL = 10.0
+
+MQTT_HOST = os.getenv("MQTT_HOST", "127.0.0.1")
+MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
+MQTT_PUNCH_TOPIC = "knockshadow/punches"
 
 DB_PATH = os.getenv("DB_PATH", "pi_data.db")
 SENSOR_MAC_1 = os.getenv("SENSOR_MAC_1", "DF:65:81:D0:D7:E5")
@@ -51,6 +56,19 @@ def _connect_sqlite() -> sqlite3.Connection:
     # pero sin coste extra de fsync en cada commit. Igual setup que pi-service/db.rs.
     conn.execute("PRAGMA synchronous=NORMAL")
     return conn
+
+
+def _create_mqtt_client():
+    try:
+        import paho.mqtt.client as mqtt
+        client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "pi-inference")
+        client.connect(MQTT_HOST, MQTT_PORT)
+        client.loop_start()
+        log.info("mqtt_connected", host=MQTT_HOST, port=MQTT_PORT)
+        return client
+    except Exception as e:
+        log.warning("mqtt_connect_failed", error=str(e))
+        return None
 
 
 def load_model():
@@ -204,6 +222,7 @@ class AsyncInferenceEngine:
         self.user_id = user_id
         self.local_training_id = local_training_id
 
+        self._mqtt = _create_mqtt_client()
         self._buffer = deque()
         self._df = pd.DataFrame()
         self._processed_peaks: set[pd.Timestamp] = set()
@@ -346,6 +365,8 @@ class AsyncInferenceEngine:
 
                 name, limb, position = parse_label(top["clase"])
 
+                prob_rounded = round(float(top["prob"]), 4)
+
                 log.info(
                     "punch_detected",
                     timestamp=time_str,
@@ -353,9 +374,25 @@ class AsyncInferenceEngine:
                     name=name,
                     limb=limb,
                     position=position,
-                    probability=round(float(top["prob"]), 4),
+                    probability=prob_rounded,
                     power_g=potencia,
                 )
+
+                if self._mqtt is not None:
+                    punch_msg = json.dumps({
+                        "class_name": name,
+                        "limb": limb,
+                        "position": position,
+                        "power": potencia,
+                        "prob": prob_rounded,
+                        "detected_at": datetime.datetime.now(
+                            datetime.timezone.utc
+                        ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
+                    })
+                    try:
+                        self._mqtt.publish(MQTT_PUNCH_TOPIC, punch_msg, qos=1)
+                    except Exception as e:
+                        log.warning("mqtt_publish_failed", error=str(e))
 
                 if self.local_training_id is not None:
                     try:
@@ -366,7 +403,7 @@ class AsyncInferenceEngine:
                             limb,
                             position,
                             potencia,
-                            round(float(top["prob"]), 4),
+                            prob_rounded,
                         )
                     except sqlite3.Error as e:
                         log.warning(

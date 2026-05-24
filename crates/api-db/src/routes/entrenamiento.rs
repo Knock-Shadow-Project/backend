@@ -8,15 +8,6 @@ use axum::{
 use crate::models::{CreateEntrenamiento, Entrenamiento, Pagination, UpdateEntrenamiento};
 use crate::state::AppState;
 
-/// Lista explícita de columnas a devolver en los endpoints de lectura.
-///
-/// Evitamos `SELECT *` por dos motivos:
-///   1. Si el esquema gana columnas internas (audit, soft-delete, etc.)
-///      no las exponemos accidentalmente al cliente.
-///   2. El planner puede usar índices de cobertura cuando las columnas son
-///      conocidas en tiempo de compilación.
-///
-/// Tras la migración 002 incluimos `id_rutina`, `paso_actual` y `estado`.
 const ENTRENAMIENTO_COLUMNS: &str = "id_entrenamiento, id_usuario, id_rutina, hora_inicio, hora_fin, tipo, calorias, paso_actual, estado";
 
 pub fn routes() -> Router<AppState> {
@@ -31,7 +22,13 @@ pub fn routes() -> Router<AppState> {
         .route("/users/{id}/trainings", get(list_trainings_by_user))
 }
 
-async fn list_trainings(
+#[utoipa::path(get, path = "/trainings",
+    params(Pagination),
+    responses((status = 200, body = Vec<Entrenamiento>)),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn list_trainings(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Entrenamiento>>, StatusCode> {
@@ -55,7 +52,16 @@ async fn list_trainings(
     Ok(Json(items))
 }
 
-async fn get_training(
+#[utoipa::path(get, path = "/trainings/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 200, body = Entrenamiento),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn get_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Entrenamiento>, StatusCode> {
@@ -77,13 +83,16 @@ async fn get_training(
     Ok(Json(item))
 }
 
-async fn create_training(
+#[utoipa::path(post, path = "/trainings",
+    request_body = CreateEntrenamiento,
+    responses((status = 200, body = Entrenamiento)),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn create_training(
     State(state): State<AppState>,
     Json(payload): Json<CreateEntrenamiento>,
 ) -> Result<Json<Entrenamiento>, StatusCode> {
-    // Cuando el cliente no manda start_time/calories/paso_actual/estado, dejamos
-    // que PostgreSQL aplique los DEFAULT definidos en el esquema (CURRENT_TIMESTAMP,
-    // 0, 'ACTIVO'). Usamos COALESCE para preservar esos defaults frente a NULLs.
     let query = format!(
         "INSERT INTO entrenamiento (id_usuario, id_rutina, hora_inicio, hora_fin, tipo, calorias, paso_actual, estado)
          VALUES (
@@ -117,7 +126,17 @@ async fn create_training(
     Ok(Json(item))
 }
 
-async fn update_training(
+#[utoipa::path(put, path = "/trainings/{id}",
+    params(("id" = i32, Path,)),
+    request_body = UpdateEntrenamiento,
+    responses(
+        (status = 200, body = Entrenamiento),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn update_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateEntrenamiento>,
@@ -158,7 +177,16 @@ async fn update_training(
     Ok(Json(item))
 }
 
-async fn delete_training(
+#[utoipa::path(delete, path = "/trainings/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn delete_training(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {
@@ -176,7 +204,13 @@ async fn delete_training(
     Ok(StatusCode::NO_CONTENT)
 }
 
-async fn list_trainings_by_user(
+#[utoipa::path(get, path = "/users/{id}/trainings",
+    params(("id" = i32, Path,), Pagination),
+    responses((status = 200, body = Vec<Entrenamiento>)),
+    security(("bearer_auth" = [])),
+    tag = "Trainings"
+)]
+pub(crate) async fn list_trainings_by_user(
     State(state): State<AppState>,
     Path(user_id): Path<i32>,
     Query(pagination): Query<Pagination>,
@@ -206,8 +240,6 @@ async fn list_trainings_by_user(
 mod tests {
     use super::*;
 
-    /// `Pagination::resolved_limit` debe forzar 50 cuando no se pasa nada y
-    /// recortar a 200 cuando el cliente pide más, para evitar payloads enormes.
     #[test]
     fn pagination_clamps_limit() {
         assert_eq!(

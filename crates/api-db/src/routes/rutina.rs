@@ -1,10 +1,3 @@
-//! Endpoints CRUD para la tabla `RUTINA`.
-//!
-//! Una rutina describe una secuencia ordenada de golpes (referencias a la
-//! tabla `GOLPE`) que un entrenamiento de tipo 'Guiado' debe seguir paso a
-//! paso. El array `SECUENCIA_GOLPES` se persiste como `INTEGER[]` en
-//! PostgreSQL; sqlx lo mapea a `Vec<i32>` sin transformación adicional.
-
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -26,7 +19,13 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_routines(
+#[utoipa::path(get, path = "/routines",
+    params(Pagination),
+    responses((status = 200, body = Vec<Rutina>)),
+    security(("bearer_auth" = [])),
+    tag = "Routines"
+)]
+pub(crate) async fn list_routines(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Rutina>>, StatusCode> {
@@ -48,7 +47,16 @@ async fn list_routines(
     Ok(Json(items))
 }
 
-async fn get_routine(
+#[utoipa::path(get, path = "/routines/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 200, body = Rutina),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Routines"
+)]
+pub(crate) async fn get_routine(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Rutina>, StatusCode> {
@@ -70,7 +78,13 @@ async fn get_routine(
     Ok(Json(item))
 }
 
-async fn create_routine(
+#[utoipa::path(post, path = "/routines",
+    request_body = CreateRutina,
+    responses((status = 200, body = Rutina)),
+    security(("bearer_auth" = [])),
+    tag = "Routines"
+)]
+pub(crate) async fn create_routine(
     State(state): State<AppState>,
     Json(payload): Json<CreateRutina>,
 ) -> Result<Json<Rutina>, StatusCode> {
@@ -93,7 +107,17 @@ async fn create_routine(
     Ok(Json(item))
 }
 
-async fn update_routine(
+#[utoipa::path(put, path = "/routines/{id}",
+    params(("id" = i32, Path,)),
+    request_body = UpdateRutina,
+    responses(
+        (status = 200, body = Rutina),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Routines"
+)]
+pub(crate) async fn update_routine(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateRutina>,
@@ -124,7 +148,16 @@ async fn update_routine(
     Ok(Json(item))
 }
 
-async fn delete_routine(
+#[utoipa::path(delete, path = "/routines/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Routines"
+)]
+pub(crate) async fn delete_routine(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {

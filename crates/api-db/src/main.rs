@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use axum::{Router, routing::get};
 use axum_prometheus::PrometheusMetricLayer;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
 use tokio::net::TcpListener;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -78,6 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/metrics",
             get(move || async move { metric_handle.render() }),
         )
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", routes::ApiDoc::openapi()))
         .merge(routes::router().with_state(app_state))
         .layer(prometheus_layer);
 

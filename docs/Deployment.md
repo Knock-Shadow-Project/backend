@@ -25,10 +25,10 @@ Guía completa de despliegue: qué piezas van al **cloud** y qué piezas van a l
 │                                                                         │
 │  ┌─────────────────────────────────────────────────────────────────┐    │
 │  │                    RASPBERRY PI 4                               │    │
-│  │  ┌─────────────┐   BLE   ┌──────────────┐   SQLite   ┌──────┐   │    │
-│  │  │  Sensores   │ ───────►│  pi-service  │◄──────────►│pi_inf│   │    │
-│  │  │   (2x)      │         │   (Rust)     │            │(Py)  │   │    │
-│  │  └─────────────┘         └──────┬───────┘            └──────┘   │    │
+│  │  ┌─────────────┐   BLE   ┌──────────────┐   MQTT    ┌──────┐   │    │
+│  │  │  Sensores   │ ───────►│  pi-service  │◄─────────│pi_inf│   │    │
+│  │  │   (2x)      │         │   (Rust)     │  nanomq  │(Py)  │   │    │
+│  │  └─────────────┘         └──────┬───────┘          └──────┘   │    │
 │  │                                 │ HTTP/WS                       │    │
 │  │                                 ▼                               │    │
 │  │                          ┌─────────────┐                        │    │
@@ -230,6 +230,8 @@ docker compose -f docker-compose.pi.yaml up -d
 | `DEVICE_MAC_2` | pi-service | MAC sensor derecho |
 | `SENSOR_MAC_1` | pi-inference | Igual que `DEVICE_MAC_1` |
 | `SENSOR_MAC_2` | pi-inference | Igual que `DEVICE_MAC_2` |
+| `MQTT_HOST` | pi-service, pi-inference | `127.0.0.1` (broker nanomq) |
+| `MQTT_PORT` | pi-service, pi-inference | `1883` |
 | `API_BASE_URL` | pi-service | `http://api.tudominio.com:3000` (opcional) |
 | `MDNS_HOSTNAME` | pi-service | `knockshadow-pi` |
 | `USER_ID` | pi-inference | `1` |
@@ -294,15 +296,20 @@ bluetoothctl devices
 
 ### La app móvil no recibe datos por WebSocket
 
-1. Verifica que `pi-service` detecta golpes en SQLite:
+1. Verifica que `pi-inference` publica punches por MQTT:
+   ```bash
+   # Suscribir al topic de punches para ver mensajes en tiempo real
+   docker exec knockshadow-nanomq nanomq_cli sub -t "knockshadow/punches"
+   ```
+2. Verifica que `pi-service` recibe los punches vía MQTT:
+   ```bash
+   # En los logs de pi-service deberías ver conexiones WS y MQTT started
+   docker logs -f knockshadow-pi-service
+   ```
+3. Verifica punches persistidos en SQLite (para sync):
    ```bash
    docker exec knockshadow-pi-service sqlite3 /data/pi_data.db \
      "SELECT COUNT(*) FROM detected_punches;"
-   ```
-2. Verifica que hay clientes conectados al WS:
-   ```bash
-   # En los logs de pi-service deberías ver conexiones WS
-   docker logs -f knockshadow-pi-service
    ```
 
 ---

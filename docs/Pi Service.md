@@ -7,25 +7,33 @@ Servicio **offline-first** para Raspberry Pi 4 que recibe datos de sensores BLE,
 ## Arquitectura general
 
 ```
-┌─────────────┐   BLE   ┌──────────────┐   SQLite   ┌─────────────────┐
-│  Sensores   │ ───────►│  pi-service  │◄──────────►│  pi_inference   │
-│   (1-2x)    │         │   (Rust)     │            │   (Python/CNN)  │
-└─────────────┘         └──────────────┘            └─────────────────┘
-                               │                           │
-                               │ HTTP/WS                   │ write punches
-                               ▼                           ▼
-                        ┌─────────────┐            ┌─────────────┐
-                        │  App Movil  │            │  SQLite DB  │
-                        │ (mDNS desc) │            │  (offline)  │
-                        └─────────────┘            └─────────────┘
-                               │                           │
-                               │ sync (si hay internet)    │
-                               ▼                           ▼
-                        ┌───────────────────────────────────────┐
-                        │           api-db remota               │
-                        │      (PostgreSQL + API REST)          │
-                        └───────────────────────────────────────┘
+┌─────────────┐   BLE   ┌──────────────┐   MQTT    ┌─────────────────┐
+│  Sensores   │ ───────►│  pi-service  │◄──────────│  pi_inference   │
+│   (1-2x)    │         │   (Rust)     │           │   (Python/CNN)  │
+└─────────────┘         └──────┬───────┘           └────────┬────────┘
+                               │                            │
+                      ┌────────┼─────────┐     ┌────────────┼────────────┐
+                      │        │         │     │            │            │
+                      │  HTTP/WS    MQTT pub   │  MQTT pub        SQLite│
+                      │  (punches   (accel     │  (punches)    (persist │
+                      │   + accel)  downsamp.) │               for sync)│
+                      ▼        │         │     ▼            │            │
+               ┌─────────────┐ │  ┌──────┴─┐  ┌──────────┐ │ ┌─────────┐
+               │  App Movil  │ │  │ nanomq │  │ nanomq   │ │ │ SQLite  │
+               │ (mDNS desc) │ │  │ broker │  │ broker   │ │ │pi_data  │
+               └─────────────┘ │  └────────┘  └──────────┘ │ └────┬────┘
+                               │                            │      │
+                               │ sync (si hay internet)     │      │
+                               ▼                            ▼      ▼
+                        ┌───────────────────────────────────────────────┐
+                        │              api-db remota                    │
+                        │         (PostgreSQL + API REST)               │
+                        └───────────────────────────────────────────────┘
 ```
+
+Los **punch events** fluyen en tiempo real por MQTT (`knockshadow/punches`):
+`pi_inference` → nanomq → `pi-service` → WS broadcast → App Móvil.
+SQLite solo almacena punches para sincronización posterior con el cloud.
 
 ---
 
@@ -112,6 +120,7 @@ Todas las rutas incluyen CORS abierto para la app móvil.
 | `POST` | `/training/stop` | Finaliza entrenamiento local |
 | `GET` | `/trainings/:id/punches` | Lista golpes de un entrenamiento |
 | `GET` | `/live` | WebSocket con stream en tiempo real de golpes |
+| `GET` | `/live/accel` | WebSocket con stream de acelerómetro (downsample 1:3) |
 
 El dashboard se sirve directamente desde el binario (`include_str!`) y se conecta al WebSocket `/live` para mostrar el último golpe detectado, una lista de los últimos 10 y controles para iniciar/parar el entrenamiento. Abrir en el navegador: `http://<ip-de-la-pi>:8080/` (o `http://knockshadow-pi.local:8080/` vía mDNS).
 
@@ -167,7 +176,7 @@ Cada golpe detectado se emite como JSON:
 }
 ```
 
-El servidor detecta nuevas filas en `detected_punches` cada 100 ms y las retransmite por broadcast a todos los clientes WebSocket conectados.
+El servidor recibe golpes en tiempo real vía MQTT (topic `knockshadow/punches`, publicado por `pi_inference`) y los retransmite por broadcast a todos los clientes WebSocket conectados. Esto reemplaza el antiguo polling de SQLite cada 100 ms, reduciendo latencia y carga en la base de datos.
 
 ---
 
@@ -215,6 +224,8 @@ Si `API_BASE_URL` está configurado, cada 30 segundos:
 | `DEVICE_MAC_2` | — | MAC del segundo sensor BLE |
 | `API_BASE_URL` | — | URL base de la API remota (opcional) |
 | `MDNS_HOSTNAME` | `knockshadow-pi` | Nombre mDNS del servicio |
+| `MQTT_HOST` | `127.0.0.1` | Host del broker MQTT (nanomq) |
+| `MQTT_PORT` | `1883` | Puerto del broker MQTT |
 | `RUST_LOG` | `info` | Nivel de logging de tracing |
 
 ---
@@ -279,12 +290,14 @@ docker buildx build --platform linux/arm64 \
 3. pi-service crea fila en local_trainings y marca entrenamiento como activo.
 4. Sensores BLE envían muestras cada ~16 ms.
 5. pi-service decodifica y guarda en ble_samples (SQLite).
-6. pi_inference.py lee de ble_samples, detecta golpes con CNN.
-7. pi_inference.py inserta en detected_punches con user_id y power.
-8. pi-service detecta nueva fila y emite por WS /live.
-9. App móvil recibe el golpe en tiempo real.
-10. App llama POST /training/stop al finalizar.
-11. Si hay API_BASE_URL, sync.rs sube datos a la API remota.
+6. pi-service publica accel downsampled (1:5) a MQTT topic knockshadow/sensors/{mac}/accel.
+7. pi_inference.py lee de ble_samples, detecta golpes con CNN.
+8. pi_inference.py publica golpe a MQTT topic knockshadow/punches.
+9. pi_inference.py guarda golpe en SQLite detected_punches (para sync posterior).
+10. pi-service recibe golpe vía MQTT y emite por WS /live.
+11. App móvil recibe el golpe en tiempo real.
+12. App llama POST /training/stop al finalizar.
+13. Si hay API_BASE_URL, sync.rs sube datos procesados a la API remota.
 ```
 
 ---
@@ -298,6 +311,7 @@ docker buildx build --platform linux/arm64 \
 | `tower-http` | 0.6 | CORS middleware |
 | `sqlx` | 0.8 | SQLite async con compile-time checks |
 | `reqwest` | 0.12 | Cliente HTTP para sync remoto |
+| `rumqttc` | 0.24 | Cliente MQTT async (publish accel + subscribe punches) |
 | `tokio` | 1.52 | Runtime async |
 | `serde` / `serde_json` | 1 | Serialización JSON |
 | `chrono` | 0.4 | Timestamps |

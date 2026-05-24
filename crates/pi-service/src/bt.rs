@@ -111,12 +111,24 @@ pub async fn run_ble(
     );
 
     while let Some((mac, name, raw)) = merged.next().await {
-        if let Some((ble_ts, x, y, z)) = decode_data(&raw)
-            && let Err(e) =
+        if let Some((ble_ts, x, y, z)) = decode_data(&raw) {
+            if let Err(e) =
                 crate::db::insert_ble_sample(&state.db, &mac, &name, ble_ts.map(i32::from), x, y, z)
                     .await
-        {
-            error!("Failed to insert BLE sample: {}", e);
+            {
+                error!("Failed to insert BLE sample: {}", e);
+            }
+            let _ = state.accel_tx.send(crate::AccelSample {
+                mac: mac.clone(),
+                device_name: name.clone(),
+                x,
+                y,
+                z,
+                ts: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            });
         }
     }
 

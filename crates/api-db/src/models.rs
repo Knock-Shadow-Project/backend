@@ -3,7 +3,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Usuario {
     #[serde(rename = "user_id")]
     #[sqlx(rename = "id_usuario")]
@@ -25,6 +25,7 @@ pub struct Usuario {
     pub age: Option<i32>,
     #[serde(rename = "weight")]
     #[sqlx(rename = "peso")]
+    #[schema(value_type = Option<f64>)]
     pub weight: Option<BigDecimal>,
     #[serde(rename = "height")]
     #[sqlx(rename = "estatura")]
@@ -44,16 +45,12 @@ pub struct Usuario {
     #[serde(rename = "level")]
     #[sqlx(rename = "nivel")]
     pub level: Option<String>,
-    /// Estado de confirmación de email. Lo añade la migración 003 con
-    /// DEFAULT FALSE; los handlers de `/register` no lo escriben (sale en
-    /// FALSE) y sólo `GET /confirm-email` lo flippa a TRUE. Se serializa
-    /// como `confirmed` para mantener la convención inglesa del JSON.
     #[serde(rename = "confirmed")]
     #[sqlx(rename = "confirmado")]
     pub confirmed: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateUsuario {
     #[serde(rename = "first_name")]
     pub first_name: String,
@@ -68,6 +65,7 @@ pub struct CreateUsuario {
     #[serde(rename = "age")]
     pub age: Option<i32>,
     #[serde(rename = "weight")]
+    #[schema(value_type = Option<f64>)]
     pub weight: Option<BigDecimal>,
     #[serde(rename = "height")]
     pub height: Option<i32>,
@@ -83,7 +81,7 @@ pub struct CreateUsuario {
     pub level: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateUsuario {
     #[serde(rename = "first_name")]
     pub first_name: Option<String>,
@@ -98,6 +96,7 @@ pub struct UpdateUsuario {
     #[serde(rename = "age")]
     pub age: Option<i32>,
     #[serde(rename = "weight")]
+    #[schema(value_type = Option<f64>)]
     pub weight: Option<BigDecimal>,
     #[serde(rename = "height")]
     pub height: Option<i32>,
@@ -113,7 +112,7 @@ pub struct UpdateUsuario {
     pub level: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Entrenamiento {
     #[serde(rename = "training_id")]
     #[sqlx(rename = "id_entrenamiento")]
@@ -121,7 +120,6 @@ pub struct Entrenamiento {
     #[serde(rename = "user_id")]
     #[sqlx(rename = "id_usuario")]
     pub user_id: i32,
-    /// FK opcional a RUTINA. `None` cuando el entrenamiento es de tipo 'Libre'.
     #[serde(rename = "routine_id")]
     #[sqlx(rename = "id_rutina")]
     pub routine_id: Option<i32>,
@@ -137,18 +135,15 @@ pub struct Entrenamiento {
     #[serde(rename = "calories")]
     #[sqlx(rename = "calorias")]
     pub calories: Option<i32>,
-    /// Paso actual de la rutina guiada (cursor sobre `SECUENCIA_GOLPES`).
-    /// Se mantiene en 0 para entrenamientos 'Libre'.
     #[serde(rename = "current_step")]
     #[sqlx(rename = "paso_actual")]
     pub current_step: Option<i32>,
-    /// Estado del entrenamiento: ACTIVO, PAUSADO, FINALIZADO…
     #[serde(rename = "state")]
     #[sqlx(rename = "estado")]
     pub state: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateEntrenamiento {
     #[serde(rename = "user_id")]
     pub user_id: i32,
@@ -168,7 +163,7 @@ pub struct CreateEntrenamiento {
     pub state: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateEntrenamiento {
     #[serde(rename = "user_id")]
     pub user_id: Option<i32>,
@@ -188,7 +183,7 @@ pub struct UpdateEntrenamiento {
     pub state: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Golpe {
     #[serde(rename = "punch_id")]
     #[sqlx(rename = "id_golpe")]
@@ -196,9 +191,6 @@ pub struct Golpe {
     #[serde(rename = "name")]
     #[sqlx(rename = "nombre")]
     pub name: String,
-    /// Tras la migración 002 estas columnas son NOT NULL en BD, pero las
-    /// mantenemos `Option` en el modelo de salida para tolerar filas
-    /// históricas que pudieran haber quedado nulas en entornos viejos.
     #[serde(rename = "limb")]
     #[sqlx(rename = "extremidad")]
     pub limb: Option<String>,
@@ -207,20 +199,17 @@ pub struct Golpe {
     pub position: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateGolpe {
     #[serde(rename = "name")]
     pub name: String,
-    /// La migración 002 hace NOT NULL `extremidad` y `posicion`. El payload
-    /// los recibe ya obligatorios; un cliente que envíe `null` fallará al
-    /// deserializar, evitando insertar filas inconsistentes.
     #[serde(rename = "limb")]
     pub limb: String,
     #[serde(rename = "position")]
     pub position: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateGolpe {
     #[serde(rename = "name")]
     pub name: Option<String>,
@@ -230,9 +219,7 @@ pub struct UpdateGolpe {
     pub position: Option<String>,
 }
 
-// Rutina --------------------------------------------------------------------
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Rutina {
     #[serde(rename = "routine_id")]
     #[sqlx(rename = "id_rutina")]
@@ -243,15 +230,12 @@ pub struct Rutina {
     #[serde(rename = "recommended_level")]
     #[sqlx(rename = "nivel_recomendado")]
     pub recommended_level: Option<String>,
-    /// Lista ordenada de IDs de GOLPE que definen el ritmo de la rutina.
-    /// Se persiste como `INTEGER[]` en PostgreSQL; sqlx la mapea directo
-    /// a `Vec<i32>`.
     #[serde(rename = "punch_sequence")]
     #[sqlx(rename = "secuencia_golpes")]
     pub punch_sequence: Option<Vec<i32>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateRutina {
     #[serde(rename = "name")]
     pub name: String,
@@ -261,7 +245,7 @@ pub struct CreateRutina {
     pub punch_sequence: Option<Vec<i32>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateRutina {
     #[serde(rename = "name")]
     pub name: Option<String>,
@@ -271,33 +255,24 @@ pub struct UpdateRutina {
     pub punch_sequence: Option<Vec<i32>>,
 }
 
-// Historial -----------------------------------------------------------------
-
-#[derive(Debug, Serialize, Deserialize, FromRow)]
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
 pub struct Historial {
-    /// PK propia tras la migración 002. Permite identificar de forma única
-    /// cada impacto registrado, incluso si en el mismo entrenamiento se
-    /// repite el mismo golpe varias veces.
     #[serde(rename = "history_id")]
     #[sqlx(rename = "id_historial")]
     pub history_id: i32,
     #[serde(rename = "training_id")]
     #[sqlx(rename = "id_entrenamiento")]
     pub training_id: i32,
-    /// Golpe efectivamente detectado por el sensor.
     #[serde(rename = "thrown_punch_id")]
     #[sqlx(rename = "id_golpe_lanzado")]
     pub thrown_punch_id: i32,
-    /// Golpe que la rutina esperaba en ese paso. `None` para entrenamientos
-    /// 'Libre' (sin secuencia guiada).
     #[serde(rename = "expected_punch_id")]
     #[sqlx(rename = "id_golpe_esperado")]
     pub expected_punch_id: Option<i32>,
     #[serde(rename = "power")]
     #[sqlx(rename = "potencia")]
+    #[schema(value_type = Option<f64>)]
     pub power: Option<BigDecimal>,
-    /// Indica si el golpe lanzado coincide con el esperado. Por defecto
-    /// TRUE (modo 'Libre' o cuando el cliente no calcula la comparación).
     #[serde(rename = "is_correct")]
     #[sqlx(rename = "es_correcto")]
     pub is_correct: Option<bool>,
@@ -306,7 +281,7 @@ pub struct Historial {
     pub impact_date: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct CreateHistorial {
     #[serde(rename = "training_id")]
     pub training_id: i32,
@@ -315,21 +290,22 @@ pub struct CreateHistorial {
     #[serde(rename = "expected_punch_id")]
     pub expected_punch_id: Option<i32>,
     #[serde(rename = "power")]
+    #[schema(value_type = Option<f64>)]
     pub power: Option<BigDecimal>,
     #[serde(rename = "is_correct")]
     pub is_correct: Option<bool>,
-    /// Si el cliente no lo manda, la BD aplica `CURRENT_TIMESTAMP`.
     #[serde(rename = "impact_date")]
     pub impact_date: Option<NaiveDateTime>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct UpdateHistorial {
     #[serde(rename = "thrown_punch_id")]
     pub thrown_punch_id: Option<i32>,
     #[serde(rename = "expected_punch_id")]
     pub expected_punch_id: Option<i32>,
     #[serde(rename = "power")]
+    #[schema(value_type = Option<f64>)]
     pub power: Option<BigDecimal>,
     #[serde(rename = "is_correct")]
     pub is_correct: Option<bool>,
@@ -337,9 +313,7 @@ pub struct UpdateHistorial {
     pub impact_date: Option<NaiveDateTime>,
 }
 
-/// Proyección enriquecida del historial: incluye los datos del golpe lanzado
-/// (catálogo `GOLPE`) para que los clientes no tengan que cruzar manualmente.
-#[derive(Debug, Serialize, FromRow)]
+#[derive(Debug, Serialize, FromRow, utoipa::ToSchema)]
 pub struct HistorialDetail {
     #[serde(rename = "history_id")]
     #[sqlx(rename = "id_historial")]
@@ -355,6 +329,7 @@ pub struct HistorialDetail {
     pub expected_punch_id: Option<i32>,
     #[serde(rename = "power")]
     #[sqlx(rename = "potencia")]
+    #[schema(value_type = Option<f64>)]
     pub power: Option<BigDecimal>,
     #[serde(rename = "is_correct")]
     #[sqlx(rename = "es_correcto")]
@@ -373,18 +348,49 @@ pub struct HistorialDetail {
     pub position: Option<String>,
 }
 
-// Pagination -----------------------------------------------------------------
+#[derive(Debug, Serialize, Deserialize, FromRow, utoipa::ToSchema)]
+pub struct ResultadoFuerza {
+    #[serde(rename = "result_id")]
+    #[sqlx(rename = "id_resultado")]
+    pub result_id: i32,
+    #[serde(rename = "user_id")]
+    #[sqlx(rename = "id_usuario")]
+    pub user_id: Option<i32>,
+    #[serde(rename = "participant_name")]
+    #[sqlx(rename = "nombre_participante")]
+    pub participant_name: String,
+    #[serde(rename = "score")]
+    #[sqlx(rename = "puntuacion")]
+    pub score: i32,
+    #[serde(rename = "mode")]
+    #[sqlx(rename = "modo")]
+    pub mode: String,
+    #[serde(rename = "group_id")]
+    #[sqlx(rename = "grupo")]
+    pub group_id: Option<String>,
+    #[serde(rename = "date")]
+    #[sqlx(rename = "fecha")]
+    pub date: Option<NaiveDateTime>,
+}
 
-/// Pagination defaults applied across list endpoints.
-///
-/// 50 strikes a balance between mobile clients (smaller payloads, snappier
-/// scroll) and admin tooling (need enough rows on a page). The 200 cap prevents
-/// `?limit=10000000` from turning into a memory exhaustion vector.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub struct CreateResultadoFuerza {
+    #[serde(rename = "user_id")]
+    pub user_id: Option<i32>,
+    #[serde(rename = "participant_name")]
+    pub participant_name: String,
+    #[serde(rename = "score")]
+    pub score: i32,
+    #[serde(rename = "mode")]
+    pub mode: Option<String>,
+    #[serde(rename = "group_id")]
+    pub group_id: Option<String>,
+}
+
 pub const DEFAULT_PAGE_SIZE: i64 = 50;
 pub const MAX_PAGE_SIZE: i64 = 200;
 
-/// Query parameters parsed by all paginated list endpoints (`?limit=…&offset=…`).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::IntoParams)]
 pub struct Pagination {
     #[serde(default)]
     pub limit: Option<i64>,
@@ -393,22 +399,18 @@ pub struct Pagination {
 }
 
 impl Pagination {
-    /// Returns the limit clamped to `[1, MAX_PAGE_SIZE]` with `DEFAULT_PAGE_SIZE` as fallback.
     pub fn resolved_limit(&self) -> i64 {
         self.limit
             .unwrap_or(DEFAULT_PAGE_SIZE)
             .clamp(1, MAX_PAGE_SIZE)
     }
 
-    /// Returns the offset clamped to `>= 0`, defaulting to 0.
     pub fn resolved_offset(&self) -> i64 {
         self.offset.unwrap_or(0).max(0)
     }
 }
 
-// Auth models ---------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct LoginRequest {
     #[serde(rename = "email")]
     pub email: String,
@@ -416,7 +418,7 @@ pub struct LoginRequest {
     pub password: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, utoipa::ToSchema)]
 pub struct LoginResponse {
     pub token: String,
     #[serde(rename = "user_id")]
@@ -427,9 +429,9 @@ pub struct LoginResponse {
     pub email: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct TokenClaims {
-    pub sub: i32, // user_id
+    pub sub: i32,
     #[serde(rename = "email")]
     pub email: String,
     pub exp: usize,

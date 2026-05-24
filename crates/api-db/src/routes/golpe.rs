@@ -19,12 +19,16 @@ pub fn routes() -> Router<AppState> {
         )
 }
 
-async fn list_punches(
+#[utoipa::path(get, path = "/punches",
+    params(Pagination),
+    responses((status = 200, body = Vec<Golpe>)),
+    security(("bearer_auth" = [])),
+    tag = "Punches"
+)]
+pub(crate) async fn list_punches(
     State(state): State<AppState>,
     Query(pagination): Query<Pagination>,
 ) -> Result<Json<Vec<Golpe>>, StatusCode> {
-    // Aunque la tabla `golpe` es un catálogo pequeño hoy, mantener LIMIT/OFFSET
-    // evita sorpresas si el catálogo crece (variantes por nivel, deportes, etc.).
     let limit = pagination.resolved_limit();
     let offset = pagination.resolved_offset();
     let query = format!(
@@ -43,7 +47,16 @@ async fn list_punches(
     Ok(Json(items))
 }
 
-async fn get_punch(
+#[utoipa::path(get, path = "/punches/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 200, body = Golpe),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Punches"
+)]
+pub(crate) async fn get_punch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<Json<Golpe>, StatusCode> {
@@ -61,13 +74,16 @@ async fn get_punch(
     Ok(Json(item))
 }
 
-async fn create_punch(
+#[utoipa::path(post, path = "/punches",
+    request_body = CreateGolpe,
+    responses((status = 200, body = Golpe)),
+    security(("bearer_auth" = [])),
+    tag = "Punches"
+)]
+pub(crate) async fn create_punch(
     State(state): State<AppState>,
     Json(payload): Json<CreateGolpe>,
 ) -> Result<Json<Golpe>, StatusCode> {
-    // Tras la migración 002, `extremidad` y `posicion` son NOT NULL en la BD.
-    // El payload `CreateGolpe` ya los exige como `String` (no `Option`), así
-    // que aquí pasamos referencias directas sin necesidad de validar nulos.
     let item = sqlx::query_as::<_, Golpe>(
         "INSERT INTO golpe (nombre, extremidad, posicion)
          VALUES ($1, $2, $3)
@@ -85,7 +101,17 @@ async fn create_punch(
     Ok(Json(item))
 }
 
-async fn update_punch(
+#[utoipa::path(put, path = "/punches/{id}",
+    params(("id" = i32, Path,)),
+    request_body = UpdateGolpe,
+    responses(
+        (status = 200, body = Golpe),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Punches"
+)]
+pub(crate) async fn update_punch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
     Json(payload): Json<UpdateGolpe>,
@@ -114,7 +140,16 @@ async fn update_punch(
     Ok(Json(item))
 }
 
-async fn delete_punch(
+#[utoipa::path(delete, path = "/punches/{id}",
+    params(("id" = i32, Path,)),
+    responses(
+        (status = 204, description = "Deleted"),
+        (status = 404, description = "Not found"),
+    ),
+    security(("bearer_auth" = [])),
+    tag = "Punches"
+)]
+pub(crate) async fn delete_punch(
     State(state): State<AppState>,
     Path(id): Path<i32>,
 ) -> Result<StatusCode, StatusCode> {

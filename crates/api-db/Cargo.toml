@@ -40,3 +40,5 @@ sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-native-tls", "post
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+utoipa = { version = "5", features = ["chrono"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }

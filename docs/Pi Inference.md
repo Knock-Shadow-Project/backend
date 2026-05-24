@@ -34,14 +34,28 @@ Script de inferencia CNN adaptado para correr **offline** en Raspberry Pi. Lee m
                                ┌─────────────┐
                                │pi_inference │
                                │  (Python)   │
-                               └──────┬──────┘
-                                      │ INSERT detected_punches
-                                      ▼
-                               ┌─────────────┐
-                               │   SQLite    │
-                               │  pi_data.db │
-                               └─────────────┘
+                               └──┬───────┬──┘
+                                  │       │
+                    MQTT publish  │       │ INSERT detected_punches
+                    (real-time)   │       │ (persist for cloud sync)
+                                  ▼       ▼
+                           ┌──────────┐ ┌─────────────┐
+                           │  nanomq  │ │   SQLite    │
+                           │  broker  │ │  pi_data.db │
+                           └────┬─────┘ └─────────────┘
+                                │
+                    MQTT subscribe
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │  pi-service  │──► WS /live ──► App Móvil
+                         │   (Rust)     │
+                         └──────────────┘
 ```
+
+Los golpes detectados se publican vía MQTT (`knockshadow/punches`) para que
+`pi-service` los retransmita por WebSocket en tiempo real. SQLite solo se usa
+para persistencia y sincronización posterior con el cloud.
 
 ---
 
@@ -83,13 +97,34 @@ Devuelve un `DataFrame` con columnas:
 
 ### `save_detected_punch(...)`
 
-Inserta un golpe clasificado en `detected_punches`:
+Inserta un golpe clasificado en `detected_punches` (solo durante entrenamiento
+activo, para sincronización posterior con el cloud):
 
 ```sql
 INSERT INTO detected_punches
 (user_id, local_training_id, class_name, limb, position, power, prob)
 VALUES (?, ?, ?, ?, ?, ?, ?)
 ```
+
+### MQTT publish
+
+Cada golpe detectado se publica inmediatamente al topic MQTT
+`knockshadow/punches` con QoS 1 (at-least-once):
+
+```json
+{
+  "class_name": "Jab",
+  "limb": "Derecha",
+  "position": "Cabeza",
+  "power": 3.45,
+  "prob": 0.9812,
+  "detected_at": "2024-06-01T10:05:23.456Z"
+}
+```
+
+`pi-service` se suscribe a este topic y reenvía los eventos por WebSocket.
+Si el broker MQTT no está disponible, la inferencia sigue funcionando
+(los punches se guardan en SQLite pero no llegan en tiempo real al WS).
 
 ### `get_active_training()`
 
@@ -127,7 +162,8 @@ Motor de inferencia continua con buffer circular.
 - Ejecuta: `merge_sensors → detect_hits → create_windows → predict_windows`.
 - **Autodetección de entrenamiento**: si no se pasó `--training-id`, re-verifica `local_trainings` cada ~10 segundos.
 - Deduplicación por timestamp del pico (TTL = 10 s).
-- Guarda cada golpe en SQLite con `user_id` y `local_training_id`.
+- Publica cada golpe vía MQTT (`knockshadow/punches`) para display en tiempo real.
+- Guarda cada golpe en SQLite con `user_id` y `local_training_id` (solo durante training activo, para sync).
 
 ---
 
@@ -165,6 +201,8 @@ python ml/pi_inference.py --user-id 42
 | `DB_PATH` | `pi_data.db` | Ruta a la SQLite local |
 | `SENSOR_MAC_1` | `DF:65:81:D0:D7:E5` | MAC del sensor izquierdo |
 | `SENSOR_MAC_2` | `CB:01:10:3E:0D:61` | MAC del sensor derecho |
+| `MQTT_HOST` | `127.0.0.1` | Host del broker MQTT (nanomq) |
+| `MQTT_PORT` | `1883` | Puerto del broker MQTT |
 
 ---
 
@@ -213,6 +251,7 @@ En `docker-compose.pi.yaml`:
       SENSOR_MAC_2: CB:01:10:3E:0D:61
     volumes:
       - pi-data:/data
+    network_mode: host
     command:
       - python
       - pi_inference.py
@@ -220,7 +259,10 @@ En `docker-compose.pi.yaml`:
       - "1"
 ```
 
-> **Nota:** Este contenedor **no necesita privilegios de Bluetooth** ni `network_mode: host`. Solo requiere acceso al volumen compartido `pi-data` donde reside la SQLite.
+> **Nota:** Este contenedor **no necesita privilegios de Bluetooth**. Usa
+> `network_mode: host` para alcanzar nanomq en `localhost:1883` y publicar
+> punches vía MQTT. Solo requiere acceso al volumen compartido `pi-data`
+> donde reside la SQLite.
 
 ---
 
@@ -258,6 +300,7 @@ En `docker-compose.pi.yaml`:
 | `numpy` | ≥1.24 | Arrays y operaciones numéricas |
 | `pandas` | ≥2.0 | Manipulación de series temporales |
 | `scipy` | ≥1.11 | Filtros Butterworth, detección de picos |
+| `paho-mqtt` | ≥2.1 | Cliente MQTT para publicar golpes en tiempo real |
 | `scikit-learn` | ≥1.4 | Split, encoding, métricas (training) |
 | `matplotlib` / `seaborn` | ≥3.8 / ≥0.13 | Visualizaciones (training) |
 

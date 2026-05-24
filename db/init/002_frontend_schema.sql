@@ -117,6 +117,21 @@ VALUES ('Jab', 'Derecha', 'Cabeza'),
         'Cabeza'
     );
 
+-- Crear la tabla RESULTADO_FUERZA (medidor de fuerza / torneos)
+CREATE TABLE IF NOT EXISTS RESULTADO_FUERZA (
+    ID_RESULTADO SERIAL PRIMARY KEY,
+    ID_USUARIO INTEGER,
+    NOMBRE_PARTICIPANTE VARCHAR(50) NOT NULL,
+    PUNTUACION INTEGER NOT NULL DEFAULT 0,
+    MODO VARCHAR(20) NOT NULL DEFAULT 'Medidor', -- 'Medidor' o 'Torneo'
+    GRUPO VARCHAR(36), -- Agrupa participantes del mismo torneo
+    FECHA TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_resultado_fuerza_usuario FOREIGN KEY (ID_USUARIO) REFERENCES USUARIO (ID_USUARIO) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_resultado_fuerza_usuario ON RESULTADO_FUERZA (ID_USUARIO);
+CREATE INDEX IF NOT EXISTS idx_resultado_fuerza_grupo ON RESULTADO_FUERZA (GRUPO);
+
 -- Insertar datos de ejemplo en USUARIO
 INSERT INTO
     USUARIO (
