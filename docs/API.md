@@ -19,6 +19,7 @@ proyecto académico está en castellano.
   - [Errores](#errores)
 - [Login](#login)
 - [Registro](#registro)
+- [Reenvío de confirmación](#reenvío-de-confirmación)
 - [WebSocket](#websocket)
 - [Metrics](#metrics)
 - [Modelos](#modelos)
@@ -170,6 +171,153 @@ Solo `first_name`, `last_name`, `email` y `password` son obligatorios.
 - `422 Unprocessable Entity` — Falta algún campo obligatorio del payload.
 - `500 Internal Server Error` — Email ya registrado (violación de
   `UNIQUE`), error de BD o de hash bcrypt.
+
+---
+
+## Reenvío de confirmación
+
+### Solicitar un nuevo email de confirmación
+
+```
+POST /resend-confirmation
+Content-Type: application/json
+
+{
+  "email": "user@example.com"
+}
+```
+
+Endpoint **público** (no requiere JWT). Pensado para la pantalla
+`confirmEmail.tsx` de la app móvil, donde el atleta aún no se ha
+autenticado pero quiere volver a recibir el email de verificación.
+
+**Respuesta de éxito (200):**
+```json
+{
+  "status": "queued",
+  "message": "Si el correo está registrado, recibirás un nuevo email en breve."
+}
+```
+
+El mensaje es **genérico a propósito**: se devuelve igual exista o no el
+correo en la base de datos, para no permitir enumeración de cuentas
+válidas desde el endpoint público.
+
+**Respuestas de error:**
+- `400 Bad Request` — Payload sin `email` o formato visiblemente inválido
+  (vacío, sin `@`).
+- `429 Too Many Requests` — Mismo email pidió un reenvío hace menos de
+  60 segundos. El cliente debe mostrar un countdown y volver a probar
+  cuando expire.
+- `500 Internal Server Error` — Error de BD o de firma JWT.
+
+### Envío real vía Resend
+
+El envío se hace con el SDK oficial `resend-rs` (crate `resend-rs = "0.24"`)
+contra el dominio verificado en Resend. El handler ejecuta dos pasos:
+
+1. Genera un JWT con `purpose=email_confirm`, mismo `JWT_SECRET` y TTL 24h.
+2. Si `EmailService` está disponible en el `AppState`, lanza un
+   `tokio::spawn` con `EmailService::send_confirmation(email, token)`.
+   La respuesta HTTP devuelve `200` inmediatamente; el envío se completa
+   en background. Cualquier error de Resend queda en logs como
+   `tracing::error!`, pero **no se filtra** al cliente.
+
+El email tiene cuerpo HTML (estilos inline, compatible con Gmail/Outlook/
+Apple Mail) y un fallback `text/plain` para scoring antispam.
+
+#### Variables de entorno requeridas
+
+| Variable | Default | Notas |
+|----------|---------|-------|
+| `RESEND_API_KEY` | _(unset)_ | Clave de Resend (https://resend.com/api-keys). Si está vacía, el envío cae al **modo stub** (loggea el enlace en vez de mandarlo). |
+| `RESEND_FROM` | `KnockShadow <no-reply@knockshadow.site>` | Buzón "From". Debe pertenecer a un dominio verificado en Resend o el envío fallará con 403. |
+| `APP_BASE_URL` | `https://api.knockshadow.site` | Base de la URL de confirmación. El enlace final es `{APP_BASE_URL}/confirm-email?token=<token>`. |
+
+> 🔐 **No commitees `RESEND_API_KEY` al repo.** El `.gitignore` ya
+> excluye `.env`. Para producción usa Vault / Doppler / AWS Secrets
+> Manager / variables de entorno del orquestador.
+
+#### Modo stub (sin API key)
+
+Si arrancas `api-db` sin `RESEND_API_KEY`, el log de arranque indica:
+
+```
+INFO RESEND_API_KEY ausente — emails en modo STUB (sólo log, sin envío real)
+```
+
+Cada solicitud loggea:
+
+```
+INFO [EMAIL STUB] Reenviar confirmación a user@example.com — token=eyJhbGciOi...
+```
+
+Útil para CI/dev sin tener que pegar la API key real.
+
+#### Pendiente: confirmar el token
+
+El endpoint que verifique el JWT y marque la cuenta como confirmada
+todavía no existe. Su esqueleto obvio es:
+
+```
+GET /confirm-email?token=<token>
+```
+
+Decodificar el JWT, validar `purpose == "email_confirm"` y marcar la
+columna `usuario.confirmado` (requiere migración nueva) a `TRUE`.
+
+### Rate-limit y multi-pod
+
+El throttle (60 s por email) sale del módulo `rate_limit` con dos
+backends conmutables al arranque:
+
+- **In-memory** (default): `HashMap` proceso-local. Suficiente para 1 pod.
+- **Valkey / Redis**: cuando `REDIS_URL` está definido. Atómico vía
+  `SET key 1 NX EX <secs>`. Funciona contra Valkey (servidor BSD-3 que
+  arrancamos en `docker-compose.yaml` como `valkey/valkey:8-alpine`) o
+  contra cualquier instancia Redis/RESP-compatible.
+
+Fail-open: si Valkey está caído, el handler permite la petición y loggea.
+Mejor que bloquear a todo el mundo por un blip de infra.
+
+Resend tiene su propio rate-limit (10 req/s por API key) que el SDK
+respeta internamente (9 req/1.1 s con buffer).
+
+---
+
+## Confirmación de correo
+
+### Marcar una cuenta como confirmada desde el enlace del email
+
+```
+GET /confirm-email?token=<jwt>
+```
+
+Endpoint **público** que abre el atleta desde su cliente de correo. El
+`token` es el JWT con `purpose=email_confirm` generado por
+`POST /resend-confirmation` (o el del email automático de registro, si se
+activa más adelante).
+
+**Respuesta de éxito (200 OK):** página HTML estilizada (HUD táctico)
+que muestra "¡Listo, atleta!" y ofrece un deep-link
+`knockshadowfront://login` para abrir la app móvil.
+
+**Respuestas de error (todas devuelven HTML):**
+- `400 Bad Request` — token vacío, mal formado, expirado, o con
+  `purpose` distinto de `email_confirm`. La página invita a pedir un
+  nuevo enlace.
+- `404 Not Found` — el email del token ya no existe en `usuario`
+  (cuenta borrada entre que se generó el token y el clic).
+- `500 Internal Server Error` — fallo de BD.
+
+**Idempotente**: si la cuenta ya estaba confirmada, devuelve `200` con la
+misma página de éxito (no es un error volver a hacer clic).
+
+**Modelo afectado**: la migración `db/init/003_email_confirmation.sql`
+añade `USUARIO.CONFIRMADO BOOLEAN NOT NULL DEFAULT FALSE`. El campo se
+expone en el JSON del modelo `Usuario` como `confirmed: bool`. **No** se
+puede setear vía `POST /register` ni `PUT /users/:id` — sólo cambia
+desde este endpoint.
 
 ---
 
@@ -770,6 +918,10 @@ Filtrado por `id_entrenamiento = :id`, ordenado por
 | `DATABASE_URL` | (obligatorio) | Cadena de conexión a PostgreSQL, p. ej. `postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow`. Sin este valor la API hace fail-fast al arrancar. |
 | `PORT` | `3000` | Puerto del servidor HTTP (debe parsearse como `u16`). |
 | `JWT_SECRET` | (obligatorio) | Clave secreta para firmar JWT. **Mínimo 32 caracteres**. Generar con `openssl rand -hex 32`. La API se niega a arrancar si falta o es muy corta. |
+| `RESEND_API_KEY` | _(opcional)_ | Clave de Resend para envío de emails. Si está vacía, los endpoints de email caen al modo stub (loggean en vez de enviar). Crea/rota la clave en `https://resend.com/api-keys`. |
+| `RESEND_FROM` | `KnockShadow <no-reply@knockshadow.site>` | Buzón "From" usado en los emails. Debe pertenecer a un dominio verificado en Resend. |
+| `APP_BASE_URL` | `https://api.knockshadow.site` | Base de los enlaces que se incluyen en los emails de confirmación. |
+| `REDIS_URL` | _(opcional)_ | URL del backend RESP usado para rate-limit distribuido (`redis://host:6379/`). Sin ella, el rate-limit es in-memory (válido para 1 pod). El stack docker-compose levanta un Valkey local; usar `redis://valkey:6379/`. |
 
 ---
 

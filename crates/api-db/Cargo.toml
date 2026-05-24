@@ -20,6 +20,20 @@ bcrypt = "0.17"
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 jsonwebtoken = "9"
+# Cliente RESP usado para el rate-limit distribuido. Apunta a Valkey
+# (fork BSD-3 de Redis mantenido por la Linux Foundation tras el cambio
+# de licencia de Redis Inc.) pero hablamos el mismo protocolo RESP, así
+# que el crate `redis` (más maduro que cualquier alternativa nativa Rust
+# para Valkey hoy) sirve sin cambios. `ConnectionManager` reconecta solo
+# cuando el pod de Valkey rebota. Si más adelante `valkey-glide` añade
+# Rust bindings y prefieres su pool, sustituir aquí es una sola línea.
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+# SDK oficial de Resend para envío de emails transaccionales (alta y
+# confirmaciones de cuenta). Async-first sobre reqwest; los emails los
+# encolamos vía `tokio::spawn` para no bloquear la respuesta HTTP del
+# atleta. Si el `RESEND_API_KEY` no está definido, el servicio simplemente
+# no se inicializa y el handler cae al modo stub (loggea el enlace).
+resend-rs = "0.24"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0"
 sqlx = { version = "0.8.6", features = ["runtime-tokio", "tls-native-tls", "postgres", "chrono", "bigdecimal"] }

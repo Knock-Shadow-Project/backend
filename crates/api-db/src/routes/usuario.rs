@@ -25,7 +25,7 @@ async fn list_users(
     let limit = pagination.resolved_limit();
     let offset = pagination.resolved_offset();
     let usuarios = sqlx::query_as::<_, Usuario>(
-        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel \
+        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel, confirmado \
          FROM usuario \
          ORDER BY id_usuario ASC \
          LIMIT $1 OFFSET $2",
@@ -46,7 +46,7 @@ async fn get_user(
     Path(id): Path<i32>,
 ) -> Result<Json<Usuario>, StatusCode> {
     let usuario = sqlx::query_as::<_, Usuario>(
-        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel FROM usuario WHERE id_usuario = $1",
+        "SELECT id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel, confirmado FROM usuario WHERE id_usuario = $1",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -76,7 +76,7 @@ async fn create_user(
     let usuario = sqlx::query_as::<_, Usuario>(
         "INSERT INTO usuario (nombre, apellido, correo, contrasena, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel",
+         RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel, confirmado",
     )
     .bind(&payload.first_name)
     .bind(&payload.last_name)
@@ -143,7 +143,7 @@ async fn update_user(
             lateralidad = COALESCE($12, lateralidad),
             nivel = COALESCE($13, nivel)
          WHERE id_usuario = $14
-         RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel",
+         RETURNING id_usuario, nombre, apellido, correo, telefono, edad, peso, estatura, pais, ciudad, direccion, lateralidad, nivel, confirmado",
     )
     .bind(&payload.first_name)
     .bind(&payload.last_name)

@@ -20,6 +20,27 @@ services:
       timeout: 5s
       retries: 5
 
+  # Valkey — fork BSD-3 de Redis. Lo usa `api-db` como backend del
+  # rate-limit distribuido cuando se define `REDIS_URL`. Sin esta env
+  # var en api-db, el rate-limit cae a memoria y este servicio queda
+  # sin uso, pero no estorba.
+  valkey:
+    image: valkey/valkey:8-alpine
+    container_name: knockshadow-valkey
+    restart: unless-stopped
+    # `--save ""` desactiva los snapshots a disco — el rate-limit es
+    # ephemeral, no nos importa perderlo en un reinicio. Si más adelante
+    # usamos Valkey para cosas con persistencia (cache, sesiones, etc.)
+    # quitar esto y montar un volumen.
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "valkey-cli", "PING"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api-db:
     build:
       context: .
@@ -30,10 +51,23 @@ services:
       DATABASE_URL: postgres://knockshadow:knockshadow@db:5432/knockshadow
       PORT: "3000"
       JWT_SECRET: ${JWT_SECRET:-knockshadow_default_secret_change_me}
+      # Resend — envío real de emails transaccionales. Si no se define
+      # `RESEND_API_KEY` el servidor arranca igual pero cae al modo stub
+      # (loggea los enlaces de confirmación en vez de mandarlos).
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM: ${RESEND_FROM:-KnockShadow <no-reply@knockshadow.site>}
+      APP_BASE_URL: ${APP_BASE_URL:-https://api.knockshadow.site}
+      # Rate-limit distribuido vía Valkey. Si la dejas vacía, api-db
+      # arranca usando el backend in-memory (1 pod) y este `valkey`
+      # queda corriendo sin tráfico — útil en dev local con un solo
+      # contenedor.
+      REDIS_URL: ${REDIS_URL:-redis://valkey:6379/}
     ports:
       - "3000:3000"
     depends_on:
       db:
+        condition: service_healthy
+      valkey:
         condition: service_healthy
 
   ml-app:

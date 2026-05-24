@@ -9,11 +9,15 @@ use tracing::info;
 mod auth;
 mod config;
 mod db;
+mod email_service;
 mod models;
+mod rate_limit;
 mod routes;
 mod state;
 
 use config::Config;
+use email_service::EmailService;
+use rate_limit::RateLimiter;
 use state::AppState;
 
 #[tokio::main]
@@ -38,9 +42,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Connected to database");
 
     let (ws_tx, _ws_rx) = broadcast::channel::<String>(256);
+
+    // Servicio de email: opcional. Sin `RESEND_API_KEY` los handlers que
+    // lo necesitan loggean en vez de enviar, así que el servidor sigue
+    // siendo arrancable en entornos de CI/dev sin proveedor configurado.
+    let email_service = EmailService::from_config(&cfg);
+    match &email_service {
+        Some(_) => info!("Resend configurado — envío real de emails activado"),
+        None => info!("RESEND_API_KEY ausente — emails en modo STUB (sólo log, sin envío real)"),
+    }
+
+    // Rate-limit: si hay `REDIS_URL` válido y alcanzable usamos backend
+    // distribuido; si no, in-memory. `from_url` ya loggea cuál eligió.
+    let rate_limiter = RateLimiter::from_url(cfg.redis_url.as_deref()).await;
+
     let app_state = AppState {
         pool,
         ws_tx: Arc::new(ws_tx),
+        email_service,
+        rate_limiter,
     };
 
     // Métricas Prometheus: el layer recoge automáticamente histogramas de

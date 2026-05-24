@@ -1,6 +1,7 @@
 use axum::Router;
 use axum::middleware;
 
+mod email;
 mod entrenamiento;
 mod golpe;
 mod historial;
@@ -12,10 +13,15 @@ use crate::auth::{auth_middleware, login_handler, register_handler};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
-    // Public routes (no auth required)
+    // Public routes (no auth required).
+    //
+    // `/resend-confirmation` vive aquí (no en `protected`) porque el atleta
+    // típicamente lo pulsará desde la pantalla `confirmEmail.tsx` antes de
+    // haber iniciado sesión por primera vez, así que no tiene JWT.
     let public = Router::new()
         .route("/login", axum::routing::post(login_handler))
-        .route("/register", axum::routing::post(register_handler));
+        .route("/register", axum::routing::post(register_handler))
+        .merge(email::routes());
 
     // Protected routes (Bearer token required)
     let protected = Router::new()

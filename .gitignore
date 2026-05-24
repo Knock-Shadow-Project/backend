@@ -1,3 +1,10 @@
 /target
 .mypycache/
 *.tar
+
+# Secretos locales — usa `.env.example` como plantilla.
+# El `.env` real debe quedarse SOLO en tu máquina (y en el gestor de
+# secretos de producción), nunca commiteado al repo.
+.env
+.env.local
+.env.*.local

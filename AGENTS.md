@@ -234,7 +234,11 @@ Si prefieres entrenar en tu PC por rendimiento:
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgres://knockshadow:knockshadow@127.0.0.1:5432/knockshadow` | PostgreSQL connection string |
 | `PORT` | `3000` | HTTP server port |
-| `JWT_SECRET` | `knockshadow_default_secret_change_me` | JWT signing secret |
+| `JWT_SECRET` | (obligatorio, ≥ 32 chars) | JWT signing secret — fail-fast si no está |
+| `RESEND_API_KEY` | _(opcional)_ | Clave de Resend. Sin ella el envío de emails cae a modo stub (log) |
+| `RESEND_FROM` | `KnockShadow <no-reply@knockshadow.site>` | Buzón "From"; dominio verificado en Resend |
+| `APP_BASE_URL` | `https://api.knockshadow.site` | Base del enlace de confirmación en los emails |
+| `REDIS_URL` | _(opcional)_ | Backend RESP para rate-limit distribuido (`redis://host:6379/`). Apunta a Valkey (BSD-3, contenedor `knockshadow-valkey` en docker-compose). Sin ella, el rate-limit es in-memory. |
 
 ### pi-service (Raspberry Pi)
 

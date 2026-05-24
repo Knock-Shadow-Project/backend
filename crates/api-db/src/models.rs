@@ -44,6 +44,13 @@ pub struct Usuario {
     #[serde(rename = "level")]
     #[sqlx(rename = "nivel")]
     pub level: Option<String>,
+    /// Estado de confirmación de email. Lo añade la migración 003 con
+    /// DEFAULT FALSE; los handlers de `/register` no lo escriben (sale en
+    /// FALSE) y sólo `GET /confirm-email` lo flippa a TRUE. Se serializa
+    /// como `confirmed` para mantener la convención inglesa del JSON.
+    #[serde(rename = "confirmed")]
+    #[sqlx(rename = "confirmado")]
+    pub confirmed: bool,
 }
 
 #[derive(Debug, Deserialize)]
