@@ -159,10 +159,13 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateUsuario>,
-) -> Result<Json<LoginResponse>, StatusCode> {
+) -> Result<Json<LoginResponse>, (StatusCode, Json<serde_json::Value>)> {
     let hashed_password = hash_password(&payload.password).map_err(|e| {
         tracing::error!("Password hash error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": "Error interno al cifrar la contraseña" })),
+        )
     })?;
 
     let usuario = sqlx::query_as::<_, Usuario>(
@@ -186,13 +189,32 @@ pub async fn register_handler(
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
+        // Postgres SQLSTATE 23505 = unique_violation. Devolvemos 409 con un
+        // mensaje claro para que el cliente sepa que el correo ya existe.
+        if let sqlx::Error::Database(db_err) = &e
+            && db_err.code().as_deref() == Some("23505")
+        {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "message": "El correo ya está registrado",
+                    "code": "EMAIL_TAKEN"
+                })),
+            );
+        }
         tracing::error!("Failed to create usuario: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": "Error interno al registrar" })),
+        )
     })?;
 
     let token = create_token(usuario.user_id, usuario.email.clone()).map_err(|e| {
         tracing::error!("JWT encode error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": "Error generando token" })),
+        )
     })?;
 
     Ok(Json(LoginResponse {

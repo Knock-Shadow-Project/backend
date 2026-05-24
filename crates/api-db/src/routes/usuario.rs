@@ -64,10 +64,13 @@ async fn get_user(
 async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUsuario>,
-) -> Result<Json<Usuario>, StatusCode> {
+) -> Result<Json<Usuario>, (StatusCode, Json<serde_json::Value>)> {
     let hashed_password = hash_password(&payload.password).map_err(|e| {
         tracing::error!("Password hash error: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": "Error interno al cifrar la contraseña" })),
+        )
     })?;
 
     let usuario = sqlx::query_as::<_, Usuario>(
@@ -91,8 +94,22 @@ async fn create_user(
     .fetch_one(&state.pool)
     .await
     .map_err(|e| {
+        if let sqlx::Error::Database(db_err) = &e
+            && db_err.code().as_deref() == Some("23505")
+        {
+            return (
+                StatusCode::CONFLICT,
+                Json(serde_json::json!({
+                    "message": "El correo ya está registrado",
+                    "code": "EMAIL_TAKEN"
+                })),
+            );
+        }
         tracing::error!("Failed to create user: {}", e);
-        StatusCode::INTERNAL_SERVER_ERROR
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "message": "Error interno al crear usuario" })),
+        )
     })?;
     Ok(Json(usuario))
 }
