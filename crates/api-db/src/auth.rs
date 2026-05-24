@@ -8,6 +8,7 @@ use axum::{
 };
 use chrono::{Duration, Utc};
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use serde_json;
 use std::sync::OnceLock;
 
 use crate::models::{CreateUsuario, LoginRequest, LoginResponse, TokenClaims, Usuario};
@@ -92,6 +93,14 @@ pub fn verify_password(password: &str, hash: &str) -> Result<bool, bcrypt::Bcryp
     bcrypt::verify(password, hash)
 }
 
+#[utoipa::path(post, path = "/login",
+    request_body = LoginRequest,
+    responses(
+        (status = 200, body = LoginResponse),
+        (status = 401, description = "Invalid credentials"),
+    ),
+    tag = "Auth"
+)]
 pub async fn login_handler(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
@@ -156,6 +165,14 @@ pub async fn auth_middleware(mut req: Request<Body>, next: Next) -> Result<Respo
     Ok(next.run(req).await)
 }
 
+#[utoipa::path(post, path = "/register",
+    request_body = CreateUsuario,
+    responses(
+        (status = 200, body = LoginResponse),
+        (status = 409, description = "Email already registered"),
+    ),
+    tag = "Auth"
+)]
 pub async fn register_handler(
     State(state): State<AppState>,
     Json(payload): Json<CreateUsuario>,
@@ -216,6 +233,49 @@ pub async fn register_handler(
             Json(serde_json::json!({ "message": "Error generando token" })),
         )
     })?;
+
+    // Fire-and-forget: send confirmation email
+    {
+        let email_addr = usuario.email.clone();
+        let exp = (Utc::now() + Duration::hours(24)).timestamp() as usize;
+        let confirm_claims = serde_json::json!({
+            "sub": email_addr,
+            "purpose": "email_confirm",
+            "exp": exp,
+        });
+        if let Ok(confirm_token) = encode(
+            &Header::default(),
+            &confirm_claims,
+            &EncodingKey::from_secret(jwt_secret().as_bytes()),
+        ) {
+            match state.email_service.clone() {
+                Some(svc) => {
+                    let email_log = email_addr.clone();
+                    tokio::spawn(async move {
+                        match svc.send_confirmation(&email_log, &confirm_token).await {
+                            Ok(id) => tracing::info!(
+                                "[EMAIL] Confirmación enviada a {} (resend_id={})",
+                                email_log,
+                                id
+                            ),
+                            Err(e) => tracing::error!(
+                                "[EMAIL] Falló envío Resend a {}: {}",
+                                email_log,
+                                e
+                            ),
+                        }
+                    });
+                }
+                None => {
+                    tracing::info!(
+                        "[EMAIL STUB] Confirmación para {} — token={}",
+                        email_addr,
+                        confirm_token
+                    );
+                }
+            }
+        }
+    }
 
     Ok(Json(LoginResponse {
         token,
