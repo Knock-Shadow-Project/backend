@@ -16,7 +16,7 @@ dependencies = [
     "seaborn>=0.13.2",
     "streamlit>=1.57.0",
     "structlog>=25.4.0",
-    "torch>=2.11.0",
+    "torch>=2.12.0",
     "websockets>=15.0",
 ]
 
