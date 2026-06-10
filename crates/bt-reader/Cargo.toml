@@ -4,11 +4,6 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 
-[profile.release]
-opt-level = 3
-codegen-units = 1
-lto = true
-
 [dependencies]
 btleplug = "0.12.0"
 futures.workspace = true

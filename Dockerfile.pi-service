@@ -1,53 +1,84 @@
 # syntax=docker/dockerfile:1
-FROM rust:1.94-bookworm AS builder
+# Builder runs on the BUILD host (amd64) and cross-compiles to arm64.
+# No QEMU needed — only the final binary is arm64.
+FROM --platform=$BUILDPLATFORM rust:1.94-bookworm AS builder
 
-# Install build dependencies for btleplug (BlueZ / D-Bus) + reqwest (openssl)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libdbus-1-dev libbluetooth-dev libssl-dev pkg-config \
+# Cross-compilation environment for aarch64
+ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+    PKG_CONFIG_ALLOW_CROSS=1 \
+    PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig \
+    OPENSSL_STATIC=1
+
+# Multiarch + cross-compiler + arm64 dev libs
+RUN dpkg --add-architecture arm64 && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    gcc-aarch64-linux-gnu g++-aarch64-linux-gnu \
+    libdbus-1-dev:arm64 libbluetooth-dev:arm64 pkg-config \
     && rm -rf /var/lib/apt/lists/*
+
+# Node.js + pnpm (native amd64 — only used to build the frontend assets)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* && \
+    npm install -g pnpm
+
+# Add arm64 Rust target
+RUN rustup target add aarch64-unknown-linux-gnu
 
 WORKDIR /app
 
-# Copy workspace manifests
+# ── Frontend build (separate layer for caching) ──────────────────────────────
+# Copy frontend sources and build. This layer is only invalidated when
+# frontend source files change, not when Rust sources change.
+COPY crates/pi-service/frontend ./crates/pi-service/frontend
+RUN cd crates/pi-service/frontend && \
+    CI=true pnpm install --frozen-lockfile && \
+    pnpm build
+
+# ── Rust dependency cache ─────────────────────────────────────────────────────
 COPY Cargo.toml Cargo.lock ./
-COPY crates/api-db/Cargo.toml ./crates/api-db/
-COPY crates/bt-reader/Cargo.toml ./crates/bt-reader/
+COPY crates/api-db/Cargo.toml     ./crates/api-db/
+COPY crates/bt-reader/Cargo.toml  ./crates/bt-reader/
 COPY crates/pi-service/Cargo.toml ./crates/pi-service/
 
-# Create dummy sources to cache dependencies
-RUN mkdir -p crates/api-db/src && echo 'fn main(){}' > crates/api-db/src/main.rs
-RUN mkdir -p crates/bt-reader/src && echo 'fn main(){}' > crates/bt-reader/src/main.rs
-RUN mkdir -p crates/pi-service/src && echo 'fn main(){}' > crates/pi-service/src/main.rs
+# Dummy sources + no-op build.rs so dependency layer is cacheable
+RUN mkdir -p crates/api-db/src crates/bt-reader/src crates/pi-service/src && \
+    echo 'fn main(){}' | tee crates/api-db/src/main.rs \
+                              crates/bt-reader/src/main.rs \
+                              crates/pi-service/src/main.rs > /dev/null && \
+    echo 'fn main(){}' > crates/pi-service/build.rs
 
-# Build dependencies (this layer is cached if manifests don't change)
-RUN cargo build -p pi-service --release || true
+RUN cargo build -p pi-service --release --target aarch64-unknown-linux-gnu || true
 
-# Copy real sources (build.rs vive en la raíz del crate, fuera de src/, y
-# minifica el dashboard embebido en tiempo de compilación).
+# ── Real build ────────────────────────────────────────────────────────────────
 COPY crates/pi-service/build.rs ./crates/pi-service/build.rs
-COPY crates/pi-service/src ./crates/pi-service/src
+COPY crates/pi-service/src      ./crates/pi-service/src
 
-# Force Cargo to rebuild pi-service (invalidate cached dummy artifacts)
+# Invalidate cached dummy artifacts and rebuild.
+# build.rs will skip pnpm because dist/index.html already exists.
 RUN touch crates/pi-service/src/main.rs && \
-    rm -f target/release/pi-service target/release/deps/pi_service* 2>/dev/null; \
-    cargo build -p pi-service --release
+    rm -rf target/release/build/pi-service* \
+           target/release/.fingerprint/pi-service* \
+           target/aarch64-unknown-linux-gnu/release/pi-service \
+           target/aarch64-unknown-linux-gnu/release/deps/pi_service* \
+           target/aarch64-unknown-linux-gnu/release/build/pi-service* \
+           target/aarch64-unknown-linux-gnu/release/.fingerprint/pi-service* \
+           2>/dev/null || true
 
-# Runtime stage
-FROM debian:bookworm-slim
+RUN cargo build -p pi-service --release --target aarch64-unknown-linux-gnu
+
+# ── Runtime stage (arm64) ─────────────────────────────────────────────────────
+FROM --platform=linux/arm64 debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libdbus-1-3 libbluetooth3 bluez libssl3 ca-certificates \
-    avahi-utils \
+    libdbus-1-3 libbluetooth3 ca-certificates avahi-utils \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/pi-service /usr/local/bin/pi-service
+COPY --from=builder \
+    /app/target/aarch64-unknown-linux-gnu/release/pi-service \
+    /usr/local/bin/pi-service
 
 EXPOSE 8080
-
-ENV PORT=8080
-ENV DB_PATH=/data/pi_data.db
-ENV RUST_LOG=info
-
-# Note: Bluetooth inside Docker requires privileged mode and D-Bus socket mount.
-# See docker-compose.pi.yml for the required configuration.
+ENV PORT=8080 DB_PATH=/data/pi_data.db RUST_LOG=info
 CMD ["pi-service"]

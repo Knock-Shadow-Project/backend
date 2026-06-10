@@ -1,30 +1,41 @@
-//! Minifica el dashboard embebido (`src/static/index.html`) en tiempo de
-//! compilación y deja el resultado en `OUT_DIR/index.min.html`, que
-//! `api.rs` incluye con `include_str!`.
-//!
-//! Minifica HTML + CSS inline (lightningcss) + JS inline (minify-js). Si el
-//! minificador de JS llegara a romper el script, basta con poner
-//! `minify_js: false` aquí: el HTML/CSS se seguirían minificando.
-
-use std::{env, fs, path::Path};
+use std::{env, fs, path::Path, process::Command};
 
 fn main() {
-    // Recompilar solo cuando cambie el dashboard.
-    println!("cargo:rerun-if-changed=src/static/index.html");
+    println!("cargo:rerun-if-changed=frontend/src");
+    println!("cargo:rerun-if-changed=frontend/index.html");
+    println!("cargo:rerun-if-changed=frontend/package.json");
+    println!("cargo:rerun-if-changed=frontend/vite.config.ts");
 
-    let src_path = "src/static/index.html";
-    let raw =
-        fs::read(src_path).unwrap_or_else(|e| panic!("build.rs: no se pudo leer {src_path}: {e}"));
+    let frontend_dir = Path::new("frontend");
+    let dist_html = frontend_dir.join("dist/index.html");
 
-    let cfg = minify_html::Cfg {
-        minify_css: true,
-        minify_js: true,
-        ..minify_html::Cfg::default()
-    };
-    let minified = minify_html::minify(&raw, &cfg);
+    // If dist/ is already present (e.g. pre-built inside Docker via an
+    // explicit RUN step), skip pnpm entirely. Otherwise run install + build
+    // (normal local-dev workflow).
+    if !dist_html.exists() {
+        let install = Command::new("pnpm")
+            .args(["--dir", frontend_dir.to_str().unwrap(), "install", "--frozen-lockfile"])
+            .status()
+            .unwrap_or_else(|e| panic!("build.rs: failed to spawn pnpm install: {e}"));
+        if !install.success() {
+            panic!("build.rs: pnpm install failed (exit {install})");
+        }
 
-    let out_dir = env::var("OUT_DIR").expect("OUT_DIR no definido");
+        let build = Command::new("pnpm")
+            .args(["--dir", frontend_dir.to_str().unwrap(), "build"])
+            .status()
+            .unwrap_or_else(|e| panic!("build.rs: failed to spawn pnpm build: {e}"));
+        if !build.success() {
+            panic!("build.rs: pnpm build failed (exit {build})");
+        }
+    }
+
+    let html = fs::read(&dist_html).unwrap_or_else(|e| {
+        panic!("build.rs: cannot read {}: {e}", dist_html.display())
+    });
+
+    let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let dest = Path::new(&out_dir).join("index.min.html");
-    fs::write(&dest, &minified)
-        .unwrap_or_else(|e| panic!("build.rs: no se pudo escribir {}: {e}", dest.display()));
+    fs::write(&dest, &html)
+        .unwrap_or_else(|e| panic!("build.rs: cannot write {}: {e}", dest.display()));
 }

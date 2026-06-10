@@ -3,12 +3,6 @@ name = "api-db"
 version.workspace = true
 edition.workspace = true
 
-
-[profile.release]
-opt-level = 3
-codegen-units = 1
-lto = true
-
 [dependencies]
 axum = { version = "0.8.9", features = ["ws"] }
 # axum-prometheus añade middleware HTTP automático (latencia, status, requests).

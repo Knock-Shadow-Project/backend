@@ -30,4 +30,3 @@ openssl = { version = "0.10", features = ["vendored"] }
 tokio-test = "0.4"
 
 [build-dependencies]
-minify-html = "0.18.1"
