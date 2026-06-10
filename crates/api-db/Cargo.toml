@@ -16,7 +16,7 @@ axum = { version = "0.8.9", features = ["ws"] }
 # nombres que la convención RED (Rate/Errors/Duration) y trae registry built-in
 # sin necesitar configurar `prometheus::Registry` a mano.
 axum-prometheus = "0.10"
-bcrypt = "0.17"
+bcrypt = "0.19"
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 jsonwebtoken = "9"
