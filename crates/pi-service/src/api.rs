@@ -94,9 +94,8 @@ async fn sensors_status(
                 let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%d %H:%M:%S%.f")
                     .ok()
                     .map(|n| n.and_utc());
-                let secs = parsed.map(|t| {
-                    (chrono::Utc::now() - t).num_milliseconds() as f64 / 1000.0
-                });
+                let secs =
+                    parsed.map(|t| (chrono::Utc::now() - t).num_milliseconds() as f64 / 1000.0);
                 let iso = parsed.map(|t| t.to_rfc3339());
                 (iso, name, secs)
             }
@@ -368,7 +367,7 @@ async fn handle_accel_socket(mut socket: axum::extract::ws::WebSocket, state: Ar
                     Ok(sample) => {
                         // Downsample 1:3 para no saturar el WS del móvil
                         skip += 1;
-                        if skip % 3 != 0 { continue; }
+                        if !skip.is_multiple_of(3) { continue; }
                         let text = serde_json::to_string(&sample).unwrap_or_default();
                         if socket.send(axum::extract::ws::Message::Text(text.into())).await.is_err() {
                             break;

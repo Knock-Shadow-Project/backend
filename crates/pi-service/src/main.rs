@@ -146,8 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let ws_tx_mqtt = state.ws_tx.clone();
 
         tokio::spawn(async move {
-            let mut mqttoptions =
-                rumqttc::MqttOptions::new("pi-service", &mqtt_host, mqtt_port);
+            let mut mqttoptions = rumqttc::MqttOptions::new("pi-service", &mqtt_host, mqtt_port);
             mqttoptions.set_keep_alive(std::time::Duration::from_secs(30));
             let (client, mut eventloop) = rumqttc::AsyncClient::new(mqttoptions, 256);
 
@@ -166,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     match mqtt_rx.recv().await {
                         Ok(sample) => {
                             skip_counter += 1;
-                            if skip_counter % 5 != 0 {
+                            if !skip_counter.is_multiple_of(5) {
                                 continue;
                             }
                             let topic = format!(

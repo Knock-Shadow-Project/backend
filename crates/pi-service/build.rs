@@ -13,8 +13,8 @@ fn main() {
     println!("cargo:rerun-if-changed=src/static/index.html");
 
     let src_path = "src/static/index.html";
-    let raw = fs::read(src_path)
-        .unwrap_or_else(|e| panic!("build.rs: no se pudo leer {src_path}: {e}"));
+    let raw =
+        fs::read(src_path).unwrap_or_else(|e| panic!("build.rs: no se pudo leer {src_path}: {e}"));
 
     let cfg = minify_html::Cfg {
         minify_css: true,

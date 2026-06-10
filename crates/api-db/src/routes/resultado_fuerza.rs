@@ -8,17 +8,13 @@ use axum::{
 use crate::models::{CreateResultadoFuerza, Pagination, ResultadoFuerza};
 use crate::state::AppState;
 
-const COLS: &str =
-    "id_resultado, id_usuario, nombre_participante, puntuacion, modo, grupo, fecha";
+const COLS: &str = "id_resultado, id_usuario, nombre_participante, puntuacion, modo, grupo, fecha";
 
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/force-results", get(list_results).post(create_result))
         .route("/force-results/{id}", get(get_result))
-        .route(
-            "/users/{id}/force-results",
-            get(list_results_by_user),
-        )
+        .route("/users/{id}/force-results", get(list_results_by_user))
 }
 
 #[utoipa::path(get, path = "/force-results",
@@ -33,9 +29,8 @@ pub(crate) async fn list_results(
 ) -> Result<Json<Vec<ResultadoFuerza>>, StatusCode> {
     let limit = pagination.resolved_limit();
     let offset = pagination.resolved_offset();
-    let query = format!(
-        "SELECT {COLS} FROM resultado_fuerza ORDER BY fecha DESC LIMIT $1 OFFSET $2"
-    );
+    let query =
+        format!("SELECT {COLS} FROM resultado_fuerza ORDER BY fecha DESC LIMIT $1 OFFSET $2");
     let items = sqlx::query_as::<_, ResultadoFuerza>(&query)
         .bind(limit)
         .bind(offset)

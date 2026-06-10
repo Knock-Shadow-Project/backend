@@ -258,11 +258,9 @@ pub async fn register_handler(
                                 email_log,
                                 id
                             ),
-                            Err(e) => tracing::error!(
-                                "[EMAIL] Falló envío Resend a {}: {}",
-                                email_log,
-                                e
-                            ),
+                            Err(e) => {
+                                tracing::error!("[EMAIL] Falló envío Resend a {}: {}", email_log, e)
+                            }
                         }
                     });
                 }

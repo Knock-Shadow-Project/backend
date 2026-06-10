@@ -75,7 +75,11 @@ impl EmailService {
         Ok(resp.id.to_string())
     }
 
-    pub async fn send_password_reset(&self, destinatario: &str, token: &str) -> ResendResult<String> {
+    pub async fn send_password_reset(
+        &self,
+        destinatario: &str,
+        token: &str,
+    ) -> ResendResult<String> {
         let url = format!(
             "{}/reset-password?token={}",
             self.app_base_url.trim_end_matches('/'),

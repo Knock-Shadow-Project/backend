@@ -40,7 +40,10 @@ pub fn routes() -> Router<AppState> {
         .route("/resend-confirmation", post(resend_confirmation))
         .route("/confirm-email", get(confirm_email))
         .route("/forgot-password", post(forgot_password))
-        .route("/reset-password", get(reset_password_form).post(reset_password_submit))
+        .route(
+            "/reset-password",
+            get(reset_password_form).post(reset_password_submit),
+        )
 }
 
 #[derive(Debug, Deserialize, utoipa::IntoParams)]
@@ -361,19 +364,20 @@ pub(crate) async fn forgot_password(
                     match svc.send_password_reset(&email_log, &token).await {
                         Ok(id) => tracing::info!(
                             "[EMAIL] Reset password enviado a {} (resend_id={})",
-                            email_log, id
+                            email_log,
+                            id
                         ),
-                        Err(e) => tracing::error!(
-                            "[EMAIL] Falló envío reset a {}: {}",
-                            email_log, e
-                        ),
+                        Err(e) => {
+                            tracing::error!("[EMAIL] Falló envío reset a {}: {}", email_log, e)
+                        }
                     }
                 });
             }
             None => {
                 tracing::info!(
                     "[EMAIL STUB] Reset password para {} — token={}",
-                    email, token
+                    email,
+                    token
                 );
             }
         }
@@ -435,7 +439,9 @@ pub(crate) async fn reset_password_form(
     if claims.purpose != "password_reset" {
         return (
             StatusCode::BAD_REQUEST,
-            Html(html_reset_error("El enlace no es válido para restablecer contraseña.")),
+            Html(html_reset_error(
+                "El enlace no es válido para restablecer contraseña.",
+            )),
         );
     }
 
@@ -489,7 +495,9 @@ pub(crate) async fn reset_password_submit(
     if claims.purpose != "password_reset" {
         return (
             StatusCode::BAD_REQUEST,
-            Html(html_reset_error("El enlace no es válido para restablecer contraseña.")),
+            Html(html_reset_error(
+                "El enlace no es válido para restablecer contraseña.",
+            )),
         );
     }
 
@@ -497,7 +505,9 @@ pub(crate) async fn reset_password_submit(
     if password.len() < 6 {
         return (
             StatusCode::BAD_REQUEST,
-            Html(html_reset_error("La contraseña debe tener al menos 6 caracteres.")),
+            Html(html_reset_error(
+                "La contraseña debe tener al menos 6 caracteres.",
+            )),
         );
     }
 
@@ -513,13 +523,12 @@ pub(crate) async fn reset_password_submit(
     };
 
     let email = claims.sub.trim().to_lowercase();
-    let updated = sqlx::query(
-        "UPDATE usuario SET contrasena = $1 WHERE correo = $2 RETURNING id_usuario",
-    )
-    .bind(&hashed)
-    .bind(&email)
-    .fetch_optional(&state.pool)
-    .await;
+    let updated =
+        sqlx::query("UPDATE usuario SET contrasena = $1 WHERE correo = $2 RETURNING id_usuario")
+            .bind(&hashed)
+            .bind(&email)
+            .fetch_optional(&state.pool)
+            .await;
 
     match updated {
         Ok(Some(_)) => {
@@ -537,7 +546,9 @@ pub(crate) async fn reset_password_submit(
             tracing::error!("reset-password: DB error para {}: {}", email, e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Html(html_reset_error("Error interno. Inténtalo de nuevo en unos minutos.")),
+                Html(html_reset_error(
+                    "Error interno. Inténtalo de nuevo en unos minutos.",
+                )),
             )
         }
     }
