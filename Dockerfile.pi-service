@@ -22,7 +22,9 @@ RUN mkdir -p crates/pi-service/src && echo 'fn main(){}' > crates/pi-service/src
 # Build dependencies (this layer is cached if manifests don't change)
 RUN cargo build -p pi-service --release || true
 
-# Copy real sources
+# Copy real sources (build.rs vive en la raíz del crate, fuera de src/, y
+# minifica el dashboard embebido en tiempo de compilación).
+COPY crates/pi-service/build.rs ./crates/pi-service/build.rs
 COPY crates/pi-service/src ./crates/pi-service/src
 
 # Force Cargo to rebuild pi-service (invalidate cached dummy artifacts)

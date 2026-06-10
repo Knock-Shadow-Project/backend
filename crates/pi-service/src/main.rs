@@ -189,14 +189,31 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             // Eventloop driver: handles reconnection + incoming punch messages
             loop {
                 match eventloop.poll().await {
+                    Ok(rumqttc::Event::Incoming(rumqttc::Packet::ConnAck(ack))) => {
+                        info!(
+                            "MQTT connected to broker {mqtt_host}:{mqtt_port} (code={:?})",
+                            ack.code
+                        );
+                    }
+                    Ok(rumqttc::Event::Incoming(rumqttc::Packet::SubAck(_))) => {
+                        info!("MQTT subscribed to knockshadow/punches");
+                    }
                     Ok(rumqttc::Event::Incoming(rumqttc::Packet::Publish(msg))) => {
                         if msg.topic == "knockshadow/punches" {
                             match serde_json::from_slice::<PunchEvent>(&msg.payload) {
                                 Ok(event) => {
+                                    let n = ws_tx_mqtt.receiver_count();
+                                    info!(
+                                        "MQTT punch received ({} -> {} WS clients)",
+                                        event.class_name, n
+                                    );
                                     let _ = ws_tx_mqtt.send(event);
                                 }
                                 Err(e) => {
-                                    tracing::debug!("Invalid punch MQTT payload: {e}");
+                                    tracing::warn!(
+                                        "Invalid punch MQTT payload: {e}; raw={}",
+                                        String::from_utf8_lossy(&msg.payload)
+                                    );
                                 }
                             }
                         }

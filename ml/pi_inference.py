@@ -61,13 +61,43 @@ def _connect_sqlite() -> sqlite3.Connection:
 def _create_mqtt_client():
     try:
         import paho.mqtt.client as mqtt
+
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, "pi-inference")
-        client.connect(MQTT_HOST, MQTT_PORT)
+
+        # Logging de conexión/desconexión. Firmas flexibles (*args) para no
+        # romper entre versiones de la CallbackAPI de paho. El reason_code es
+        # el 1er arg variádico en VERSION2 (flags, reason_code, properties);
+        # lo logueamos para distinguir "conectado OK" de "rechazado por broker".
+        def _on_connect(_c, _u, _flags=None, reason_code=None, *_a):
+            log.info(
+                "mqtt_connected",
+                host=MQTT_HOST,
+                port=MQTT_PORT,
+                reason_code=str(reason_code),
+            )
+
+        def _on_disconnect(_c, _u, *_a):
+            log.warning("mqtt_disconnected", host=MQTT_HOST, port=MQTT_PORT)
+
+        def _on_connect_fail(_c, _u, *_a):
+            log.warning("mqtt_connect_failed", host=MQTT_HOST, port=MQTT_PORT)
+
+        client.on_connect = _on_connect
+        client.on_disconnect = _on_disconnect
+        client.on_connect_fail = _on_connect_fail
+
+        # connect_async + loop_start NO lanza excepción si el broker (nanomq)
+        # todavía no está listo en el arranque, y reintenta la conexión en
+        # segundo plano automáticamente. Con el connect() síncrono anterior una
+        # carrera de arranque dejaba el cliente en None PARA SIEMPRE: los golpes
+        # se detectaban y logueaban, pero nunca se publicaban al MQTT, así que
+        # pi-service no los reenviaba por /live y la UI quedaba en blanco.
+        client.connect_async(MQTT_HOST, MQTT_PORT)
         client.loop_start()
-        log.info("mqtt_connected", host=MQTT_HOST, port=MQTT_PORT)
+        log.info("mqtt_client_started", host=MQTT_HOST, port=MQTT_PORT)
         return client
     except Exception as e:
-        log.warning("mqtt_connect_failed", error=str(e))
+        log.warning("mqtt_setup_failed", error=str(e))
         return None
 
 
@@ -390,7 +420,20 @@ class AsyncInferenceEngine:
                         ).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
                     })
                     try:
-                        self._mqtt.publish(MQTT_PUNCH_TOPIC, punch_msg, qos=1)
+                        info = self._mqtt.publish(MQTT_PUNCH_TOPIC, punch_msg, qos=1)
+                        # rc=0 (MQTT_ERR_SUCCESS) sólo significa "encolado". Si
+                        # el cliente no está conectado, paho devuelve
+                        # rc=4 (MQTT_ERR_NO_CONN) y el mensaje se pierde salvo
+                        # que haya sesión persistente. is_published() permite
+                        # ver si realmente salió al broker.
+                        rc = getattr(info, "rc", None)
+                        connected = self._mqtt.is_connected()
+                        log.info(
+                            "mqtt_published",
+                            topic=MQTT_PUNCH_TOPIC,
+                            rc=int(rc) if rc is not None else None,
+                            connected=connected,
+                        )
                     except Exception as e:
                         log.warning("mqtt_publish_failed", error=str(e))
 

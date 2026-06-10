@@ -17,7 +17,11 @@ use crate::{AppState, db};
 /// Baked into the binary at compile time via `include_str!` so the pi-service
 /// ships a single artifact (no runtime filesystem dependency, no Dockerfile
 /// changes). Re-builds are required to update the UI.
-const INDEX_HTML: &str = include_str!("static/index.html");
+///
+/// El fuente vive en `src/static/index.html`; `build.rs` lo minifica
+/// (HTML + CSS + JS) y deja el resultado en `OUT_DIR/index.min.html`, que es
+/// lo que se incrusta aquí.
+const INDEX_HTML: &str = include_str!(concat!(env!("OUT_DIR"), "/index.min.html"));
 
 pub fn router(state: Arc<AppState>) -> Router {
     let cors = CorsLayer::new()
@@ -319,10 +323,20 @@ async fn handle_socket(mut socket: axum::extract::ws::WebSocket, state: Arc<AppS
                     _ => {}
                 }
             }
-            Ok(event) = rx.recv() => {
-                let text = serde_json::to_string(&event).unwrap_or_default();
-                if socket.send(axum::extract::ws::Message::Text(text.into())).await.is_err() {
-                    break;
+            recv = rx.recv() => {
+                match recv {
+                    Ok(event) => {
+                        let text = serde_json::to_string(&event).unwrap_or_default();
+                        if socket.send(axum::extract::ws::Message::Text(text.into())).await.is_err() {
+                            break;
+                        }
+                    }
+                    // El cliente se quedó atrás y el buffer del broadcast
+                    // desbordó: descartamos lo perdido y seguimos vivos en
+                    // vez de bloquear el socket para siempre.
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    // El emisor se cerró (apagado del servicio): salimos.
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
                 }
             }
             else => break,

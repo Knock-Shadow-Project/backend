@@ -26,6 +26,12 @@ services:
         # Host networking is recommended on the Raspberry Pi so that mDNS
         # broadcasts are visible on the local WiFi network.
         network_mode: host
+        # El broker MQTT debe existir para reenviar golpes al WebSocket.
+        # `depends_on` garantiza que `up -d pi-service` también levante nanomq
+        # (si no, nombrar servicios sueltos deja el broker sin arrancar y las
+        # publicaciones se pierden silenciosamente).
+        depends_on:
+            - nanomq
 
     pi-inference:
         image: loseardes77/knockshadow-pi-inference:latest
@@ -36,6 +42,8 @@ services:
         restart: unless-stopped
         # Host networking so pi-inference can reach nanomq on localhost:1883.
         network_mode: host
+        depends_on:
+            - nanomq
         environment:
             DB_PATH: /data/pi_data.db
             # Same source of truth as pi-service / ml-app: DEVICE_MAC_*.

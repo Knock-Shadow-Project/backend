@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -21,13 +22,22 @@
             --shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
         }
 
-        * { box-sizing: border-box; }
-        html, body { margin: 0; padding: 0; height: 100%; }
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+        }
+
         body {
             background: radial-gradient(1200px 600px at 20% -10%, #1a2030 0%, #0b0d12 60%) fixed;
             color: var(--text);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-                         "Helvetica Neue", Arial, sans-serif;
+                "Helvetica Neue", Arial, sans-serif;
             font-size: 16px;
             line-height: 1.4;
             -webkit-font-smoothing: antialiased;
@@ -45,13 +55,17 @@
             top: 0;
             z-index: 10;
         }
+
         header h1 {
             margin: 0;
             font-size: 18px;
             font-weight: 600;
             letter-spacing: 0.4px;
         }
-        header h1 .accent { color: var(--accent); }
+
+        header h1 .accent {
+            color: var(--accent);
+        }
 
         /* Connection status pill */
         .conn {
@@ -67,21 +81,39 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+
         .conn .dot {
-            width: 8px; height: 8px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             background: var(--muted);
-            box-shadow: 0 0 0 0 rgba(0,0,0,0);
+            box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
         }
-        .conn[data-state="connected"]    .dot { background: var(--good);
-            box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18); }
-        .conn[data-state="connecting"]   .dot { background: var(--warn);
-            animation: pulse 1.2s ease-in-out infinite; }
-        .conn[data-state="disconnected"] .dot { background: var(--bad); }
+
+        .conn[data-state="connected"] .dot {
+            background: var(--good);
+            box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18);
+        }
+
+        .conn[data-state="connecting"] .dot {
+            background: var(--warn);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        .conn[data-state="disconnected"] .dot {
+            background: var(--bad);
+        }
 
         @keyframes pulse {
-            0%,100% { box-shadow: 0 0 0 0 rgba(246, 196, 83, 0.6); }
-            50%     { box-shadow: 0 0 0 6px rgba(246, 196, 83, 0); }
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(246, 196, 83, 0.6);
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(246, 196, 83, 0);
+            }
         }
 
         /* Sensors bar — un pill por DEVICE_MAC configurado, con dot de estado. */
@@ -95,6 +127,7 @@
             background: var(--panel);
             font-size: 13px;
         }
+
         #sensors-bar .sensors-label {
             color: var(--muted);
             text-transform: uppercase;
@@ -102,6 +135,7 @@
             font-size: 11px;
             margin-right: 4px;
         }
+
         .sensor-pill {
             display: inline-flex;
             align-items: center;
@@ -114,29 +148,38 @@
             font-variant-numeric: tabular-nums;
             cursor: default;
         }
+
         .sensor-pill .dot {
-            width: 8px; height: 8px; border-radius: 50%;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
             background: var(--muted);
         }
+
         .sensor-pill[data-state="online"] .dot {
             background: var(--good);
             box-shadow: 0 0 0 4px rgba(61, 220, 151, 0.18);
         }
+
         .sensor-pill[data-state="stale"] .dot {
             background: var(--warn);
             animation: pulse 1.2s ease-in-out infinite;
         }
+
         .sensor-pill[data-state="offline"] .dot {
             background: var(--bad);
         }
+
         .sensor-pill[data-state="unknown"] .dot {
             background: var(--muted);
         }
+
         .sensor-pill .mac {
             color: var(--muted);
             font-size: 11px;
             font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
         }
+
         .sensor-pill .age {
             color: var(--muted);
             font-size: 11px;
@@ -152,15 +195,18 @@
             border-bottom: 1px solid var(--border);
             background: var(--panel);
         }
+
         #training-info {
             flex: 1 1 auto;
             min-width: 0;
             color: var(--muted);
             font-size: 14px;
         }
+
         #training-info.active {
             color: var(--text);
         }
+
         #training-info .badge {
             display: inline-block;
             padding: 3px 8px;
@@ -171,6 +217,7 @@
             font-size: 12px;
             margin-right: 8px;
         }
+
         #user-id-input {
             width: 70px;
             padding: 8px 10px;
@@ -180,7 +227,11 @@
             border-radius: 6px;
             font-size: 14px;
         }
-        #user-id-input:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #user-id-input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
         button {
             padding: 8px 14px;
@@ -193,23 +244,38 @@
             cursor: pointer;
             transition: background 0.15s, border-color 0.15s, transform 0.05s;
         }
-        button:hover:not(:disabled) { background: #252c3d; border-color: #38415a; }
-        button:active:not(:disabled) { transform: translateY(1px); }
-        button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        button:hover:not(:disabled) {
+            background: #252c3d;
+            border-color: #38415a;
+        }
+
+        button:active:not(:disabled) {
+            transform: translateY(1px);
+        }
+
+        button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
         button.primary {
             background: var(--accent);
             border-color: var(--accent);
             color: #0b0d12;
         }
+
         button.primary:hover:not(:disabled) {
             background: #ff6e5d;
             border-color: #ff6e5d;
         }
+
         button.danger {
             background: transparent;
             border-color: rgba(255, 93, 74, 0.4);
             color: var(--accent);
         }
+
         button.danger:hover:not(:disabled) {
             background: rgba(255, 93, 74, 0.1);
             border-color: var(--accent);
@@ -217,15 +283,9 @@
 
         /* Main layout */
         main {
-            display: grid;
-            grid-template-columns: 1.4fr 1fr;
-            gap: 20px;
             padding: 20px;
             max-width: 1200px;
             margin: 0 auto;
-        }
-        @media (max-width: 800px) {
-            main { grid-template-columns: 1fr; }
         }
 
         /* Last punch card */
@@ -242,21 +302,32 @@
             position: relative;
             overflow: hidden;
         }
+
         #last-punch::before {
             content: "";
             position: absolute;
             inset: 0;
             background: radial-gradient(400px 200px at 100% 0%,
-                rgba(255, 93, 74, 0.08) 0%, transparent 70%);
+                    rgba(255, 93, 74, 0.08) 0%, transparent 70%);
             pointer-events: none;
         }
+
         #last-punch.flash {
             animation: flash 0.6s ease-out;
         }
+
         @keyframes flash {
-            0%   { box-shadow: 0 0 0 0 rgba(255, 93, 74, 0.6), var(--shadow); }
-            50%  { box-shadow: 0 0 0 14px rgba(255, 93, 74, 0), var(--shadow); }
-            100% { box-shadow: var(--shadow); }
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 93, 74, 0.6), var(--shadow);
+            }
+
+            50% {
+                box-shadow: 0 0 0 14px rgba(255, 93, 74, 0), var(--shadow);
+            }
+
+            100% {
+                box-shadow: var(--shadow);
+            }
         }
 
         .empty-state {
@@ -273,6 +344,7 @@
             letter-spacing: 0.8px;
             margin-bottom: 6px;
         }
+
         #lp-type {
             margin: 0 0 14px;
             font-size: clamp(40px, 8vw, 64px);
@@ -281,12 +353,14 @@
             line-height: 1;
             color: var(--accent);
         }
+
         .chips {
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
             margin-bottom: 22px;
         }
+
         .chip {
             display: inline-flex;
             align-items: center;
@@ -298,9 +372,20 @@
             font-size: 13px;
             font-weight: 500;
         }
-        .chip.arm-left  { color: var(--accent-2); border-color: rgba(74, 184, 255, 0.3); }
-        .chip.arm-right { color: var(--accent);   border-color: rgba(255, 93, 74, 0.3); }
-        .chip .ico { opacity: 0.8; }
+
+        .chip.arm-left {
+            color: var(--accent-2);
+            border-color: rgba(74, 184, 255, 0.3);
+        }
+
+        .chip.arm-right {
+            color: var(--accent);
+            border-color: rgba(255, 93, 74, 0.3);
+        }
+
+        .chip .ico {
+            opacity: 0.8;
+        }
 
         .meta {
             display: grid;
@@ -308,7 +393,11 @@
             gap: 14px 22px;
             margin: 0;
         }
-        .meta > div { min-width: 0; }
+
+        .meta>div {
+            min-width: 0;
+        }
+
         .meta dt {
             color: var(--muted);
             font-size: 11px;
@@ -316,6 +405,7 @@
             letter-spacing: 0.6px;
             margin-bottom: 4px;
         }
+
         .meta dd {
             margin: 0;
             font-size: 18px;
@@ -343,6 +433,7 @@
             padding: 18px 20px;
             box-shadow: var(--shadow);
         }
+
         #timeline h3 {
             margin: 0 0 12px;
             font-size: 13px;
@@ -351,11 +442,13 @@
             letter-spacing: 0.8px;
             color: var(--muted);
         }
+
         #punch-list {
             list-style: none;
             margin: 0;
             padding: 0;
         }
+
         #punch-list li {
             display: grid;
             grid-template-columns: 1fr auto;
@@ -364,16 +457,22 @@
             border-bottom: 1px solid var(--border);
             animation: slideIn 0.3s ease-out;
         }
-        #punch-list li:last-child { border-bottom: none; }
+
+        #punch-list li:last-child {
+            border-bottom: none;
+        }
+
         #punch-list li .tl-type {
             font-weight: 600;
             font-size: 15px;
             color: var(--text);
         }
+
         #punch-list li .tl-meta {
             font-size: 12px;
             color: var(--muted);
         }
+
         #punch-list li .tl-age {
             grid-row: 1 / span 2;
             grid-column: 2;
@@ -382,6 +481,7 @@
             color: var(--muted);
             font-variant-numeric: tabular-nums;
         }
+
         #punch-list li.muted {
             display: block;
             color: var(--muted);
@@ -389,9 +489,17 @@
             text-align: center;
             padding: 28px 0;
         }
+
         @keyframes slideIn {
-            from { opacity: 0; transform: translateY(-6px); }
-            to   { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(-6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         /* Toast */
@@ -413,16 +521,394 @@
             transition: opacity 0.2s, transform 0.2s;
             max-width: 90vw;
         }
+
         #toast.show {
             opacity: 1;
             transform: translateX(-50%) translateY(-4px);
         }
+
         #toast.error {
             border-color: rgba(255, 93, 74, 0.6);
             color: var(--accent);
         }
+
+        /* ===== Mode tabs ===== */
+        #mode-tabs {
+            display: flex;
+            gap: 8px;
+            padding: 14px 20px 0;
+            max-width: 1200px;
+            margin: 0 auto;
+            flex-wrap: wrap;
+        }
+
+        .mode-tab {
+            flex: 1 1 auto;
+            text-align: center;
+            padding: 11px 14px;
+            border-radius: 10px 10px 0 0;
+            border: 1px solid var(--border);
+            border-bottom: none;
+            background: var(--panel);
+            color: var(--muted);
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .mode-tab:hover {
+            color: var(--text);
+        }
+
+        .mode-tab[aria-selected="true"] {
+            background: var(--panel-2);
+            color: var(--text);
+            box-shadow: inset 0 3px 0 var(--accent);
+        }
+
+        .panel {
+            animation: fadeIn 0.2s ease-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        .eval-grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 800px) {
+            .eval-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ===== Force meter ===== */
+        .force-card,
+        .guided-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 28px 24px;
+            box-shadow: var(--shadow);
+            text-align: center;
+            max-width: 720px;
+            margin: 0 auto;
+        }
+
+        .force-card.flash {
+            animation: flash 0.6s ease-out;
+        }
+
+        .force-score {
+            font-size: clamp(64px, 18vw, 150px);
+            font-weight: 800;
+            line-height: 1;
+            color: var(--accent);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .force-level {
+            font-size: 24px;
+            font-weight: 700;
+            margin-top: 8px;
+            letter-spacing: 0.5px;
+        }
+
+        .record-flash {
+            color: var(--good);
+            font-weight: 700;
+            font-size: 14px;
+            margin-top: 6px;
+            min-height: 18px;
+        }
+
+        .force-bar {
+            margin: 20px auto 8px;
+            height: 28px;
+            border-radius: 999px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            overflow: hidden;
+            max-width: 560px;
+        }
+
+        .force-bar>span {
+            display: block;
+            height: 100%;
+            width: 0%;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #3ddc97, #f6c453 55%, #ff5d4a);
+            transition: width 0.35s cubic-bezier(.22, 1, .36, 1);
+        }
+
+        .force-meta,
+        .guided-stats {
+            display: flex;
+            justify-content: center;
+            gap: 26px;
+            margin-top: 18px;
+            flex-wrap: wrap;
+        }
+
+        .force-meta dt,
+        .guided-stats dt {
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .force-meta dd,
+        .guided-stats dd {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .force-settings {
+            max-width: 560px;
+            margin: 18px auto 0;
+            text-align: left;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            background: var(--panel-2);
+            padding: 10px 14px;
+        }
+
+        .force-settings>summary {
+            cursor: pointer;
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+        }
+
+        .force-cfg-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .force-cfg-grid label {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+            font-size: 12px;
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .force-cfg-grid input {
+            font-size: 16px;
+            padding: 8px 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--panel);
+            color: var(--text, inherit);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .force-cfg-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .force-cfg-actions button {
+            flex: 1;
+        }
+
+        .force-cfg-check {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--muted);
+            cursor: pointer;
+        }
+
+        .force-cfg-check input {
+            width: 16px;
+            height: 16px;
+        }
+
+        .force-cfg-hint {
+            margin: 10px 0 2px;
+            font-size: 11px;
+            color: var(--muted);
+        }
+
+        /* ===== Guided training ===== */
+        .guided-prompt-label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+        }
+
+        .guided-target {
+            font-size: clamp(34px, 7vw, 56px);
+            font-weight: 800;
+            margin: 8px 0 4px;
+            color: var(--accent-2);
+            line-height: 1.05;
+        }
+
+        .guided-target small {
+            display: block;
+            font-size: 17px;
+            color: var(--muted);
+            font-weight: 600;
+            margin-top: 8px;
+        }
+
+        .guided-feedback {
+            min-height: 38px;
+            font-size: 24px;
+            font-weight: 700;
+            margin: 14px 0;
+        }
+
+        .guided-feedback.ok {
+            color: var(--good);
+        }
+
+        .guided-feedback.bad {
+            color: var(--bad);
+        }
+
+        .guided-card.flash-ok {
+            animation: flashOk 0.6s ease-out;
+        }
+
+        .guided-card.flash-bad {
+            animation: flashBad 0.6s ease-out;
+        }
+
+        @keyframes flashOk {
+            0% {
+                box-shadow: 0 0 0 0 rgba(61, 220, 151, 0.6), var(--shadow);
+            }
+
+            50% {
+                box-shadow: 0 0 0 14px rgba(61, 220, 151, 0), var(--shadow);
+            }
+
+            100% {
+                box-shadow: var(--shadow);
+            }
+        }
+
+        @keyframes flashBad {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 93, 74, 0.6), var(--shadow);
+            }
+
+            50% {
+                box-shadow: 0 0 0 14px rgba(255, 93, 74, 0), var(--shadow);
+            }
+
+            100% {
+                box-shadow: var(--shadow);
+            }
+        }
+
+        .guided-summary {
+            margin-top: 16px;
+            font-size: 15px;
+            color: var(--text);
+        }
+
+        .guided-controls {
+            display: flex;
+            gap: 14px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-top: 22px;
+        }
+
+        .guided-controls label {
+            color: var(--muted);
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .guided-controls select,
+        .guided-controls input[type="number"] {
+            padding: 7px 9px;
+            background: var(--panel-2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .switch {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+            color: var(--text);
+            font-weight: 600;
+        }
+
+        .switch input {
+            display: none;
+        }
+
+        .switch .track {
+            width: 42px;
+            height: 24px;
+            border-radius: 999px;
+            background: var(--panel-2);
+            border: 1px solid var(--border);
+            position: relative;
+            transition: background 0.15s, border-color 0.15s;
+        }
+
+        .switch .track::after {
+            content: "";
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--muted);
+            transition: transform 0.15s, background 0.15s;
+        }
+
+        .switch input:checked+.track {
+            background: rgba(61, 220, 151, 0.25);
+            border-color: var(--good);
+        }
+
+        .switch input:checked+.track::after {
+            transform: translateX(18px);
+            background: var(--good);
+        }
     </style>
 </head>
+
 <body>
     <header>
         <h1>Knock<span class="accent">Shadow</span> Pi</h1>
@@ -446,31 +932,147 @@
         <button id="btn-stop" class="danger" disabled>Stop</button>
     </section>
 
-    <main>
-        <article id="last-punch" class="empty">
-            <div class="empty-state" id="lp-empty">waiting for first punch…</div>
-            <div class="punch-detail" hidden>
-                <div class="lp-label">Last punch</div>
-                <h2 id="lp-type">—</h2>
-                <div class="chips">
-                    <span class="chip" id="lp-arm">—</span>
-                    <span class="chip" id="lp-height">—</span>
-                </div>
-                <dl class="meta">
-                    <div><dt>Confidence</dt><dd id="lp-prob">—</dd></div>
-                    <div><dt>Power</dt><dd id="lp-power">—</dd></div>
-                    <div><dt>When</dt><dd id="lp-time">—</dd></div>
-                </dl>
-                <span id="classifier-idle" hidden>classifier idle</span>
-            </div>
-        </article>
+    <nav id="mode-tabs" role="tablist" aria-label="modos de entrenamiento">
+        <button class="mode-tab" role="tab" data-mode="eval" aria-selected="true">Evaluación</button>
+        <button class="mode-tab" role="tab" data-mode="force" aria-selected="false">Medidor de fuerza</button>
+        <button class="mode-tab" role="tab" data-mode="guided" aria-selected="false">Entrenamiento guiado</button>
+    </nav>
 
-        <aside id="timeline">
-            <h3>Recent (last 10)</h3>
-            <ul id="punch-list">
-                <li class="muted">no punches yet</li>
-            </ul>
-        </aside>
+    <main>
+        <section id="panel-eval" class="panel" role="tabpanel" aria-label="Evaluación de modelo">
+            <div class="eval-grid">
+                <article id="last-punch" class="empty">
+                    <div class="empty-state" id="lp-empty">waiting for first punch…</div>
+                    <div class="punch-detail" hidden>
+                        <div class="lp-label">Last punch</div>
+                        <h2 id="lp-type">—</h2>
+                        <div class="chips">
+                            <span class="chip" id="lp-arm">—</span>
+                            <span class="chip" id="lp-height">—</span>
+                        </div>
+                        <dl class="meta">
+                            <div>
+                                <dt>Confidence</dt>
+                                <dd id="lp-prob">—</dd>
+                            </div>
+                            <div>
+                                <dt>Power</dt>
+                                <dd id="lp-power">—</dd>
+                            </div>
+                            <div>
+                                <dt>When</dt>
+                                <dd id="lp-time">—</dd>
+                            </div>
+                        </dl>
+                        <span id="classifier-idle" hidden>classifier idle</span>
+                    </div>
+                </article>
+
+                <aside id="timeline">
+                    <h3>Recent (last 10)</h3>
+                    <ul id="punch-list">
+                        <li class="muted">no punches yet</li>
+                    </ul>
+                </aside>
+            </div>
+        </section>
+
+        <section id="panel-force" class="panel" role="tabpanel" aria-label="Medidor de fuerza" hidden>
+            <div class="force-card" id="force-card">
+                <div class="lp-label guided-prompt-label">Medidor de fuerza</div>
+                <div class="force-score" id="force-score">—</div>
+                <div class="force-level" id="force-level">esperando golpe…</div>
+                <div class="record-flash" id="force-record-flash"></div>
+                <div class="force-bar"><span id="force-bar-fill"></span></div>
+                <dl class="force-meta">
+                    <div>
+                        <dt>Potencia</dt>
+                        <dd id="force-g">— G</dd>
+                    </div>
+                    <div>
+                        <dt>Récord sesión</dt>
+                        <dd id="force-max">— G</dd>
+                    </div>
+                    <div>
+                        <dt>Golpes</dt>
+                        <dd id="force-count">0</dd>
+                    </div>
+                </dl>
+                <button id="force-reset" class="danger" style="margin-top:18px">Reiniciar récord</button>
+                <details class="force-settings">
+                    <summary>Ajustes del medidor</summary>
+                    <div class="force-cfg-grid">
+                        <label>Umbral golpe (G neta)
+                            <input type="number" id="force-cfg-min" step="0.05" min="0.05" inputmode="decimal">
+                        </label>
+                        <label>Golpe máximo (G neta)
+                            <input type="number" id="force-cfg-max" step="0.1" min="0.1" inputmode="decimal">
+                        </label>
+                        <label>Cierre golpe (G neta)
+                            <input type="number" id="force-cfg-release" step="0.05" min="0.02" inputmode="decimal">
+                        </label>
+                        <label>Mantener marca (s)
+                            <input type="number" id="force-cfg-hold" step="0.5" min="0" inputmode="decimal">
+                        </label>
+                    </div>
+                    <label class="force-cfg-check">
+                        <input type="checkbox" id="force-cfg-auto">
+                        Auto-calibrar tope al mejor golpe de la sesión
+                    </label>
+                    <div class="force-cfg-actions">
+                        <button id="force-cfg-apply" class="primary">Aplicar</button>
+                        <button id="force-cfg-reset">Por defecto</button>
+                    </div>
+                    <p class="force-cfg-hint">Puntuación 0–999 sobre la G <b>neta</b> (sin la gravedad de reposo). Se guarda en este navegador; sobrevive a recompilaciones.</p>
+                </details>
+            </div>
+        </section>
+
+        <section id="panel-guided" class="panel" role="tabpanel" aria-label="Entrenamiento guiado" hidden>
+            <div class="guided-card" id="guided-card">
+                <div class="guided-prompt-label">Pega este golpe</div>
+                <div class="guided-target" id="guided-target">—</div>
+                <div class="guided-feedback" id="guided-feedback"></div>
+                <dl class="guided-stats">
+                    <div>
+                        <dt>Aciertos</dt>
+                        <dd id="guided-hits">0</dd>
+                    </div>
+                    <div>
+                        <dt>Fallos</dt>
+                        <dd id="guided-miss">0</dd>
+                    </div>
+                    <div>
+                        <dt>Precisión</dt>
+                        <dd id="guided-acc">—</dd>
+                    </div>
+                    <div>
+                        <dt>Progreso</dt>
+                        <dd id="guided-prog">0/0</dd>
+                    </div>
+                </dl>
+                <div class="guided-summary" id="guided-summary" hidden></div>
+                <div class="guided-controls">
+                    <label class="switch" title="Cuenta cualquier golpe detectado como correcto, ignorando el objetivo">
+                        <input type="checkbox" id="guided-override" />
+                        <span class="track"></span>
+                        Validar cualquier golpe
+                    </label>
+                    <label>Exigencia
+                        <select id="guided-strictness">
+                            <option value="full">Completo (tipo + brazo + altura)</option>
+                            <option value="type_limb">Tipo + brazo</option>
+                            <option value="type">Solo tipo</option>
+                        </select>
+                    </label>
+                    <label>Objetivo
+                        <input type="number" id="guided-goal" min="0" value="10" style="width:64px" />
+                    </label>
+                    <button id="guided-skip">Saltar</button>
+                    <button id="guided-restart" class="primary">Reiniciar</button>
+                </div>
+            </div>
+        </section>
     </main>
 
     <div id="toast" role="status" aria-live="polite"></div>
@@ -479,16 +1081,49 @@
         "use strict";
 
         // ---------- Constants ----------
+        // Etiquetas de display (en español, coherentes con el resto del sistema:
+        // app móvil, logs de pi-inference). Las CLAVES son los tokens canónicos;
+        // todo evento se normaliza a esos tokens con norm*() antes de mostrarse
+        // o compararse.
         const TYPE_LABEL = {
             jab: "Jab",
             cross: "Cross",
-            hook: "Hook",
-            uppercut: "Uppercut",
+            hook: "Gancho",
+            uppercut: "Upper",
         };
-        const ARM_LABEL    = { derecha: "Right",  izquierda: "Left"  };
-        const HEIGHT_LABEL = { arriba:  "High",   abajo:     "Low"   };
-        const ARM_ICON     = { derecha: "↗",      izquierda: "↖"     };
-        const HEIGHT_ICON  = { arriba:  "↑",      abajo:     "↓"     };
+        const ARM_LABEL = { derecha: "Derecha", izquierda: "Izquierda" };
+        const HEIGHT_LABEL = { arriba: "Cabeza", abajo: "Cuerpo" };
+        const ARM_ICON = { derecha: "↗", izquierda: "↖" };
+        const HEIGHT_ICON = { arriba: "↑", abajo: "↓" };
+
+        // --- Normalización a tokens canónicos ---
+        // pi-inference publica los golpes con strings de DISPLAY ("Upper",
+        // "Derecha", "Cabeza"), mientras que el modelo etiqueta en CANÓNICO
+        // ("uppercut_derecha_arriba"). Aceptamos AMBAS formas y las llevamos a
+        // los tokens canónicos (jab/cross/hook/uppercut · derecha/izquierda ·
+        // arriba/abajo) que usan tanto el display como el matching del guiado.
+        // (arriba≈Cabeza, abajo≈Cuerpo según parse_label de pi-inference.)
+        const TYPE_FROM = {
+            jab: "jab", cross: "cross", hook: "hook", uppercut: "uppercut",
+            gancho: "hook", upper: "uppercut",
+        };
+        const LIMB_FROM = { derecha: "derecha", izquierda: "izquierda" };
+        const POS_FROM = {
+            arriba: "arriba", abajo: "abajo",
+            cabeza: "arriba", cuerpo: "abajo",
+        };
+        function normType(ev) {
+            const raw = (ev.class_name || "").toLowerCase().split("_")[0];
+            return TYPE_FROM[raw] ?? raw;
+        }
+        function normLimb(ev) {
+            const raw = (ev.limb || "").toLowerCase();
+            return LIMB_FROM[raw] ?? raw;
+        }
+        function normPos(ev) {
+            const raw = (ev.position || "").toLowerCase();
+            return POS_FROM[raw] ?? raw;
+        }
         const RECENT_MAX = 10;
         const IDLE_MS = 15000;
         // Umbrales de estado de sensor en segundos. Ajustables sin tocar el
@@ -496,6 +1131,53 @@
         const SENSOR_ONLINE_S = 3;
         const SENSOR_STALE_S = 15;
         const SENSORS_POLL_MS = 2000;
+
+        // ---------- Modos de entrenamiento ----------
+        // training_type enviado a /training/start según el modo seleccionado.
+        const MODE_TRAINING_TYPE = {
+            eval: "Evaluation",
+            force: "ForceMeter",
+            guided: "GuidedTraining",
+        };
+
+        // ---- Medidor de fuerza: mapeo G -> score 0..100 (estilo feria) ----
+        // El medidor NO usa los eventos de golpe clasificados: lee el stream
+        // de acelerómetro CRUDO (/live/accel) y hace su propia detección de
+        // picos. Cada muestra trae x/y/z en raw i16; G = |xyz| / SENSOR_SCALE
+        // (igual que el pipeline de Python, SENSOR_SCALE=1000).
+        const ACCEL_SENSOR_SCALE = 1000; // raw -> G (debe coincidir con pipeline)
+        const FORCE_SCORE_MAX = 999;     // escala estilo feria: 0..999
+        const FORCE_GRAVITY_G = 1.0;     // reposo ≈ 1 G; se resta => G NETA del golpe
+        // Valores por defecto del medidor, en G NETA (ya sin la gravedad). Un
+        // golpe fuerte en estos sensores pica ~2 G netos (≈3 G absolutos), por
+        // eso el tope por defecto es bajo: así la escala 0..999 se reparte sobre
+        // el rango REAL de un puñetazo, no sobre el techo físico del sensor.
+        // Ajustables EN VIVO desde la UI (panel force → "Ajustes del medidor");
+        // se guardan en localStorage y persisten entre recompilaciones.
+        const FORCE_DEFAULTS = {
+            minG: 0.4,      // G NETA mínima para contar como golpe (≈1.4 G abs)
+            maxG: 2.5,      // G NETA que marca la puntuación tope (golpe fuerte)
+            releaseG: 0.25, // G NETA por debajo de la cual el golpe se cierra
+            holdMs: 5000,   // mantener la marca al menos 5 s
+            autoMax: false, // si true: el tope sube al mejor golpe de la sesión
+        };
+        // v2: cambió la semántica de los valores (ahora G NETA, no absoluta), así
+        // que usamos clave nueva para ignorar configs viejas guardadas.
+        const FORCE_CFG_KEY = "ks.forceCfg.v2";
+        const FORCE_LEVELS = [
+            { min: 0, label: "Débil", color: "#8a93a6" },
+            { min: 20, label: "Flojo", color: "#4ab8ff" },
+            { min: 40, label: "Medio", color: "#3ddc97" },
+            { min: 60, label: "Fuerte", color: "#f6c453" },
+            { min: 80, label: "Potente", color: "#ff8a3d" },
+            { min: 92, label: "¡Demoledor!", color: "#ff5d4a" },
+        ];
+
+        // ---- Entrenamiento guiado: combos posibles (4×2×2 = 16) ----
+        const GUIDED_TYPES = ["jab", "cross", "hook", "uppercut"];
+        const GUIDED_LIMBS = ["derecha", "izquierda"];
+        const GUIDED_POS = ["arriba", "abajo"];
+        const GUIDED_NEXT_MS = 900; // pausa antes del siguiente golpe
 
         // ---------- State ----------
         const state = {
@@ -511,30 +1193,75 @@
             sensorsPollTimer: null,
             sensorsLastPayload: null, // último GET /sensors crudo para re-render local
             lastPunchAt: null,       // epoch ms of newest punch
+            mode: "eval",            // "eval" | "force" | "guided"
+            force: { max: 0, maxNet: 0, count: 0, inHit: false, hitPeak: 0, holdUntil: 0 },
+            forceCfg: { ...FORCE_DEFAULTS }, // sobreescrito desde localStorage en init
+            forceWs: null,           // WebSocket /live/accel (sólo en modo force)
+            forceWsTimer: null,      // reconexión del WS de accel
+            forceIdleTimer: null,    // revierte la marca tras FORCE_HOLD_MS
+            guided: null,            // inicializado en initGuided()
         };
 
         // ---------- DOM cache ----------
         const $ = (id) => document.getElementById(id);
         const dom = {
-            conn:       $("conn-status"),
-            connLabel:  $("conn-status").querySelector(".label"),
+            conn: $("conn-status"),
+            connLabel: $("conn-status").querySelector(".label"),
             trainingInfo: $("training-info"),
-            userInput:  $("user-id-input"),
-            btnStart:   $("btn-start"),
-            btnStop:    $("btn-stop"),
-            lastPunch:  $("last-punch"),
-            lpEmpty:    $("lp-empty"),
-            lpDetail:   $("last-punch").querySelector(".punch-detail"),
-            lpType:     $("lp-type"),
-            lpArm:      $("lp-arm"),
-            lpHeight:   $("lp-height"),
-            lpProb:     $("lp-prob"),
-            lpPower:    $("lp-power"),
-            lpTime:     $("lp-time"),
-            lpIdle:     $("classifier-idle"),
-            punchList:  $("punch-list"),
+            userInput: $("user-id-input"),
+            btnStart: $("btn-start"),
+            btnStop: $("btn-stop"),
+            lastPunch: $("last-punch"),
+            lpEmpty: $("lp-empty"),
+            lpDetail: $("last-punch").querySelector(".punch-detail"),
+            lpType: $("lp-type"),
+            lpArm: $("lp-arm"),
+            lpHeight: $("lp-height"),
+            lpProb: $("lp-prob"),
+            lpPower: $("lp-power"),
+            lpTime: $("lp-time"),
+            lpIdle: $("classifier-idle"),
+            punchList: $("punch-list"),
             sensorPills: $("sensor-pills"),
-            toast:      $("toast"),
+            toast: $("toast"),
+            // modos
+            modeTabs: document.querySelectorAll(".mode-tab"),
+            panels: {
+                eval: $("panel-eval"),
+                force: $("panel-force"),
+                guided: $("panel-guided"),
+            },
+            // medidor de fuerza
+            forceCard: $("force-card"),
+            forceScore: $("force-score"),
+            forceLevel: $("force-level"),
+            forceBar: $("force-bar-fill"),
+            forceG: $("force-g"),
+            forceMax: $("force-max"),
+            forceCount: $("force-count"),
+            forceRecordFlash: $("force-record-flash"),
+            forceReset: $("force-reset"),
+            forceCfgMin: $("force-cfg-min"),
+            forceCfgMax: $("force-cfg-max"),
+            forceCfgRelease: $("force-cfg-release"),
+            forceCfgHold: $("force-cfg-hold"),
+            forceCfgAuto: $("force-cfg-auto"),
+            forceCfgApply: $("force-cfg-apply"),
+            forceCfgReset: $("force-cfg-reset"),
+            // entrenamiento guiado
+            guidedCard: $("guided-card"),
+            guidedTarget: $("guided-target"),
+            guidedFeedback: $("guided-feedback"),
+            guidedHits: $("guided-hits"),
+            guidedMiss: $("guided-miss"),
+            guidedAcc: $("guided-acc"),
+            guidedProg: $("guided-prog"),
+            guidedSummary: $("guided-summary"),
+            guidedOverride: $("guided-override"),
+            guidedStrictness: $("guided-strictness"),
+            guidedGoal: $("guided-goal"),
+            guidedSkip: $("guided-skip"),
+            guidedRestart: $("guided-restart"),
         };
 
         // ---------- Helpers ----------
@@ -542,15 +1269,16 @@
             return s && s.length ? s[0].toUpperCase() + s.slice(1) : (s || "?");
         }
         function describe(ev) {
-            const className = ev.class_name || "";
-            const [type] = className.split("_");
+            const type = normType(ev);
+            const limb = normLimb(ev);
+            const pos = normPos(ev);
             return {
-                type:   TYPE_LABEL[type]            ?? cap(type),
-                arm:    ARM_LABEL[ev.limb]          ?? cap(ev.limb),
-                height: HEIGHT_LABEL[ev.position]   ?? cap(ev.position),
-                armIcon:    ARM_ICON[ev.limb]       ?? "",
-                heightIcon: HEIGHT_ICON[ev.position] ?? "",
-                armKey:     ev.limb || "",
+                type: TYPE_LABEL[type] ?? cap(type),
+                arm: ARM_LABEL[limb] ?? cap(limb),
+                height: HEIGHT_LABEL[pos] ?? cap(pos),
+                armIcon: ARM_ICON[limb] ?? "",
+                heightIcon: HEIGHT_ICON[pos] ?? "",
+                armKey: limb,
             };
         }
         function fmtAge(detectedAtMs) {
@@ -607,7 +1335,7 @@
                 });
                 ws.addEventListener("close", scheduleReconnect);
                 ws.addEventListener("error", () => {
-                    try { ws.close(); } catch (_e) {}
+                    try { ws.close(); } catch (_e) { }
                 });
             } catch (_e) {
                 scheduleReconnect();
@@ -638,6 +1366,11 @@
             // Force reflow so the animation restarts on rapid consecutive punches.
             void dom.lastPunch.offsetWidth;
             dom.lastPunch.classList.add("flash");
+
+            // El medidor de fuerza NO usa estos eventos clasificados: se
+            // alimenta del stream de accel crudo (/live/accel). Aquí sólo
+            // repartimos al entrenamiento guiado.
+            handleGuidedPunch(ev);
         }
 
         function renderLastPunch(ev) {
@@ -765,7 +1498,10 @@
                 const r = await fetch("/training/start", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ user_id: userId, training_type: "Standard" }),
+                    body: JSON.stringify({
+                        user_id: userId,
+                        training_type: MODE_TRAINING_TYPE[state.mode] || "Standard",
+                    }),
                 });
                 if (!r.ok) {
                     const body = await r.text();
@@ -897,9 +1633,364 @@
             }
         }
 
+        // ---------- Modo: conmutación de pestañas ----------
+        function setMode(mode) {
+            if (!MODE_TRAINING_TYPE[mode]) return;
+            state.mode = mode;
+            dom.modeTabs.forEach((b) =>
+                b.setAttribute("aria-selected", b.dataset.mode === mode ? "true" : "false"));
+            for (const key of Object.keys(dom.panels)) {
+                dom.panels[key].hidden = key !== mode;
+            }
+            // El stream de accel crudo sólo se consume en el modo force.
+            if (mode === "force") {
+                connectForceWs();
+                renderForce(null);
+            } else {
+                disconnectForceWs();
+            }
+            if (mode === "guided") {
+                if (!state.guided) initGuided();
+                renderGuided();
+            }
+        }
+
+        // ---------- Medidor de fuerza (detección sobre accel CRUDO) ----------
+        // Tope efectivo de la escala (en G neta). Con autoMax, sube al mejor
+        // golpe de la sesión para que tu pegada más fuerte marque siempre ~999.
+        function forceScaleTop() {
+            const c = state.forceCfg;
+            return c.autoMax ? Math.max(c.maxG, state.force.maxNet || 0) : c.maxG;
+        }
+        // Fracción 0..1 de un golpe (en G NETA) dentro de la escala configurada.
+        function forceFractionFromG(netG) {
+            if (netG == null || !Number.isFinite(netG)) return null;
+            const minG = state.forceCfg.minG;
+            const span = (forceScaleTop() - minG) || 1;
+            return Math.max(0, Math.min(1, (netG - minG) / span));
+        }
+        // forceLevelFor trabaja sobre porcentaje 0..100 (los umbrales de
+        // FORCE_LEVELS), independiente de la escala visible (0..999).
+        function forceLevelFor(pct) {
+            let lvl = FORCE_LEVELS[0];
+            for (const l of FORCE_LEVELS) if (pct >= l.min) lvl = l;
+            return lvl;
+        }
+        // Récord/contador de sesión: siempre visibles (récord en G absoluta).
+        function renderForceStats() {
+            dom.forceMax.textContent = state.force.max > 0
+                ? `${state.force.max.toFixed(2)} G` : "— G";
+            dom.forceCount.textContent = String(state.force.count);
+        }
+        // Pinta la marca de un golpe: score grande (0..999) + barra + nivel.
+        // netG puntúa; gAbs (G absoluta medida) se muestra como "Potencia".
+        function renderForceMark(netG, gAbs) {
+            const frac = forceFractionFromG(netG);
+            if (frac == null) return;
+            const score = Math.round(frac * FORCE_SCORE_MAX);
+            const pct = frac * 100;
+            const lvl = forceLevelFor(pct);
+            dom.forceScore.textContent = String(score);
+            dom.forceScore.style.color = lvl.color;
+            dom.forceLevel.textContent = lvl.label;
+            dom.forceLevel.style.color = lvl.color;
+            dom.forceBar.style.width = `${pct}%`;
+            dom.forceG.textContent = `${gAbs.toFixed(2)} G`;
+        }
+        // Estado de reposo (sin marca activa).
+        function renderForceIdle() {
+            dom.forceScore.textContent = "—";
+            dom.forceScore.style.color = "";
+            dom.forceLevel.textContent = "esperando golpe…";
+            dom.forceLevel.style.color = "";
+            dom.forceBar.style.width = "0%";
+            dom.forceG.textContent = "— G";
+        }
+        // Compat: setMode llama renderForce(null) al entrar al panel.
+        function renderForce(_ev) {
+            renderForceStats();
+            if (Date.now() >= state.force.holdUntil) renderForceIdle();
+        }
+
+        // --- WebSocket de accel crudo: vive sólo mientras estamos en force ---
+        function connectForceWs() {
+            if (state.forceWs) return;
+            clearTimeout(state.forceWsTimer);
+            try {
+                const proto = location.protocol === "https:" ? "wss:" : "ws:";
+                const ws = new WebSocket(`${proto}//${location.host}/live/accel`);
+                state.forceWs = ws;
+                ws.addEventListener("message", (e) => {
+                    try { handleForceSample(JSON.parse(e.data)); } catch (_err) { }
+                });
+                ws.addEventListener("close", scheduleForceWsReconnect);
+                ws.addEventListener("error", () => { try { ws.close(); } catch (_e) { } });
+            } catch (_e) {
+                scheduleForceWsReconnect();
+            }
+        }
+        function scheduleForceWsReconnect() {
+            state.forceWs = null;
+            if (state.mode !== "force") return; // no reconectar si salimos del modo
+            clearTimeout(state.forceWsTimer);
+            state.forceWsTimer = setTimeout(connectForceWs, 1000);
+        }
+        function disconnectForceWs() {
+            clearTimeout(state.forceWsTimer);
+            const ws = state.forceWs;
+            state.forceWs = null;
+            if (ws) { try { ws.onclose = null; ws.close(); } catch (_e) { } }
+            state.force.inHit = false;
+        }
+
+        // Detección de picos sobre la magnitud cruda, con histéresis. Cada
+        // muestra es de UN sensor; el guante en reposo ronda 1 G (por debajo
+        // del umbral) y el que golpea genera el pico.
+        function handleForceSample(sample) {
+            if (state.mode !== "force") return;
+            const x = sample.x, y = sample.y, z = sample.z;
+            if (![x, y, z].every(Number.isFinite)) return;
+            const absG = Math.sqrt(x * x + y * y + z * z) / ACCEL_SENSOR_SCALE;
+            // G NETA: descontamos la gravedad de reposo. La detección y la
+            // puntuación trabajan sobre la neta; guardamos el pico ABSOLUTO
+            // para mostrarlo como "Potencia".
+            const netG = Math.max(0, absG - FORCE_GRAVITY_G);
+            if (!state.force.inHit) {
+                if (netG >= state.forceCfg.minG) {
+                    state.force.inHit = true;
+                    state.force.hitPeak = absG;
+                }
+            } else {
+                if (absG > state.force.hitPeak) state.force.hitPeak = absG;
+                if (netG < state.forceCfg.releaseG) {
+                    const peakAbs = state.force.hitPeak;
+                    state.force.inHit = false;
+                    registerForceHit(peakAbs);
+                }
+            }
+        }
+
+        // Finaliza un golpe: cuenta, récord, pinta la marca y la mantiene
+        // FORCE_HOLD_MS (≥5 s) antes de volver a reposo.
+        function registerForceHit(gAbs) {
+            if (gAbs == null || !Number.isFinite(gAbs)) return;
+            const netG = Math.max(0, gAbs - FORCE_GRAVITY_G);
+            state.force.count += 1;
+            let isRecord = false;
+            if (gAbs > state.force.max) { state.force.max = gAbs; isRecord = true; }
+            // maxNet alimenta la auto-calibración; se actualiza ANTES de pintar
+            // para que un nuevo récord marque la cima de la escala.
+            if (netG > (state.force.maxNet || 0)) state.force.maxNet = netG;
+            const holdMs = state.forceCfg.holdMs;
+            state.force.holdUntil = Date.now() + holdMs;
+            renderForceStats();
+            renderForceMark(netG, gAbs);
+            dom.forceRecordFlash.textContent = isRecord ? "🏆 ¡Nuevo récord!" : "";
+            dom.forceCard.classList.remove("flash");
+            void dom.forceCard.offsetWidth;
+            dom.forceCard.classList.add("flash");
+            clearTimeout(state.forceIdleTimer);
+            state.forceIdleTimer = setTimeout(() => {
+                if (state.mode === "force" && Date.now() >= state.force.holdUntil) {
+                    dom.forceRecordFlash.textContent = "";
+                    renderForceIdle();
+                }
+            }, holdMs + 50);
+        }
+
+        function resetForce() {
+            state.force = { max: 0, maxNet: 0, count: 0, inHit: false, hitPeak: 0, holdUntil: 0 };
+            clearTimeout(state.forceIdleTimer);
+            dom.forceRecordFlash.textContent = "";
+            renderForceStats();
+            renderForceIdle();
+        }
+
+        // --- Ajustes en vivo del medidor (persistidos en localStorage) ---
+        function loadForceCfg() {
+            try {
+                const raw = localStorage.getItem(FORCE_CFG_KEY);
+                if (raw) state.forceCfg = { ...FORCE_DEFAULTS, ...JSON.parse(raw) };
+            } catch (_e) { /* localStorage no disponible o JSON corrupto */ }
+            applyForceCfgToInputs();
+        }
+        function saveForceCfg() {
+            try {
+                localStorage.setItem(FORCE_CFG_KEY, JSON.stringify(state.forceCfg));
+            } catch (_e) { /* modo privado / sin storage: se mantiene en memoria */ }
+        }
+        function applyForceCfgToInputs() {
+            const c = state.forceCfg;
+            dom.forceCfgMin.value = c.minG;
+            dom.forceCfgMax.value = c.maxG;
+            dom.forceCfgRelease.value = c.releaseG;
+            dom.forceCfgHold.value = c.holdMs / 1000;
+            dom.forceCfgAuto.checked = !!c.autoMax;
+            dom.forceCfgMax.disabled = !!c.autoMax; // con auto, el tope manual es base
+        }
+        // Lee inputs -> cfg con saneado (orden coherente y rangos físicos).
+        function applyForceCfgFromInputs() {
+            const c = state.forceCfg;
+            const num = (el, def) => {
+                const v = parseFloat(el.value);
+                return Number.isFinite(v) ? v : def;
+            };
+            let minG = Math.max(0.05, num(dom.forceCfgMin, c.minG));
+            let maxG = Math.max(minG + 0.1, num(dom.forceCfgMax, c.maxG));
+            // El cierre (histéresis) debe quedar por debajo del umbral de entrada.
+            let releaseG = Math.min(num(dom.forceCfgRelease, c.releaseG), minG);
+            releaseG = Math.max(0.02, releaseG);
+            let holdMs = Math.max(0, num(dom.forceCfgHold, c.holdMs / 1000)) * 1000;
+            const autoMax = !!dom.forceCfgAuto.checked;
+            state.forceCfg = { minG, maxG, releaseG, holdMs, autoMax };
+            saveForceCfg();
+            applyForceCfgToInputs(); // refleja los valores saneados
+            renderForce(null);       // re-pinta la barra/idle con la escala nueva
+            showToast("Ajustes del medidor guardados");
+        }
+        function resetForceCfg() {
+            state.forceCfg = { ...FORCE_DEFAULTS };
+            saveForceCfg();
+            applyForceCfgToInputs();
+            renderForce(null);
+            showToast("Ajustes restablecidos");
+        }
+
+        // ---------- Entrenamiento guiado ----------
+        function clampGoal(n) {
+            return Number.isInteger(n) && n >= 0 ? n : 10;
+        }
+        function initGuided() {
+            state.guided = {
+                target: randomTarget(null),
+                hits: 0,
+                miss: 0,
+                count: 0,
+                goal: clampGoal(Number(dom.guidedGoal.value)),
+                finished: false,
+            };
+        }
+        function randomTarget(prev) {
+            let t;
+            do {
+                t = {
+                    type: GUIDED_TYPES[Math.floor(Math.random() * GUIDED_TYPES.length)],
+                    limb: GUIDED_LIMBS[Math.floor(Math.random() * GUIDED_LIMBS.length)],
+                    position: GUIDED_POS[Math.floor(Math.random() * GUIDED_POS.length)],
+                };
+            } while (prev && t.type === prev.type && t.limb === prev.limb && t.position === prev.position);
+            return t;
+        }
+        function matchesTarget(ev, t, strictness) {
+            if (normType(ev) !== t.type) return false;
+            if (strictness === "type") return true;
+            if (normLimb(ev) !== t.limb) return false;
+            if (strictness === "type_limb") return true;
+            return normPos(ev) === t.position;
+        }
+        function renderGuided() {
+            const g = state.guided;
+            if (!g) return;
+            const t = g.target;
+            dom.guidedTarget.innerHTML =
+                `${escapeHtml(TYPE_LABEL[t.type] ?? cap(t.type))}` +
+                `<small>${escapeHtml(ARM_LABEL[t.limb] ?? cap(t.limb))} · ` +
+                `${escapeHtml(HEIGHT_LABEL[t.position] ?? cap(t.position))}</small>`;
+            dom.guidedHits.textContent = String(g.hits);
+            dom.guidedMiss.textContent = String(g.miss);
+            const total = g.hits + g.miss;
+            dom.guidedAcc.textContent = total > 0 ? `${Math.round((g.hits / total) * 100)}%` : "—";
+            dom.guidedProg.textContent = g.goal > 0 ? `${g.count}/${g.goal}` : `${g.count}/∞`;
+        }
+        function nextTarget() {
+            const g = state.guided;
+            if (!g) return;
+            g.target = randomTarget(g.target);
+            dom.guidedFeedback.textContent = "";
+            dom.guidedFeedback.className = "guided-feedback";
+            renderGuided();
+        }
+        function flashGuided(kind) {
+            dom.guidedCard.classList.remove("flash-ok", "flash-bad");
+            void dom.guidedCard.offsetWidth;
+            dom.guidedCard.classList.add(kind === "ok" ? "flash-ok" : "flash-bad");
+        }
+        function finishGuided() {
+            const g = state.guided;
+            g.finished = true;
+            const total = g.hits + g.miss;
+            const acc = total > 0 ? Math.round((g.hits / total) * 100) : 0;
+            dom.guidedSummary.hidden = false;
+            dom.guidedSummary.innerHTML =
+                `✅ Sesión completada — <strong>${g.hits}</strong> aciertos / ` +
+                `<strong>${g.miss}</strong> fallos · precisión <strong>${acc}%</strong>`;
+            dom.guidedFeedback.textContent = "";
+            dom.guidedFeedback.className = "guided-feedback";
+            dom.guidedTarget.innerHTML = "¡Bien hecho! 🥊";
+        }
+        function handleGuidedPunch(ev) {
+            if (state.mode !== "guided") return;
+            const g = state.guided;
+            if (!g || g.finished) return;
+
+            const override = dom.guidedOverride.checked;
+            const strictness = dom.guidedStrictness.value;
+            const ok = override || matchesTarget(ev, g.target, strictness);
+            const d = describe(ev);
+
+            g.count += 1;
+            if (ok) {
+                g.hits += 1;
+                dom.guidedFeedback.textContent = override
+                    ? `✔ Validado (${d.type} ${d.arm} ${d.height})`
+                    : "✔ ¡Correcto!";
+                dom.guidedFeedback.className = "guided-feedback ok";
+                flashGuided("ok");
+            } else {
+                g.miss += 1;
+                dom.guidedFeedback.textContent = `✗ Fallo — detectado ${d.type} ${d.arm} ${d.height}`;
+                dom.guidedFeedback.className = "guided-feedback bad";
+                flashGuided("bad");
+            }
+            renderGuided();
+
+            if (g.goal > 0 && g.count >= g.goal) {
+                finishGuided();
+                return;
+            }
+            // Breve pausa para que se lea el feedback antes del siguiente golpe.
+            setTimeout(() => { if (state.guided === g && !g.finished) nextTarget(); }, GUIDED_NEXT_MS);
+        }
+        function restartGuided() {
+            dom.guidedSummary.hidden = true;
+            dom.guidedSummary.innerHTML = "";
+            initGuided();
+            dom.guidedFeedback.textContent = "";
+            dom.guidedFeedback.className = "guided-feedback";
+            renderGuided();
+        }
+
         // ---------- Init ----------
         dom.btnStart.addEventListener("click", startTraining);
         dom.btnStop.addEventListener("click", stopTraining);
+        dom.modeTabs.forEach((b) =>
+            b.addEventListener("click", () => setMode(b.dataset.mode)));
+        dom.forceReset.addEventListener("click", resetForce);
+        dom.forceCfgApply.addEventListener("click", applyForceCfgFromInputs);
+        dom.forceCfgReset.addEventListener("click", resetForceCfg);
+        dom.guidedSkip.addEventListener("click", () => {
+            const g = state.guided;
+            if (g && !g.finished) nextTarget();
+        });
+        dom.guidedRestart.addEventListener("click", restartGuided);
+        dom.guidedGoal.addEventListener("change", () => {
+            if (state.guided && !state.guided.finished) {
+                state.guided.goal = clampGoal(Number(dom.guidedGoal.value));
+                renderGuided();
+            }
+        });
+
+        loadForceCfg(); // restaura ajustes del medidor guardados (si los hay)
 
         (async () => {
             await refreshActiveTraining();
@@ -914,4 +2005,5 @@
         })();
     </script>
 </body>
+
 </html>
