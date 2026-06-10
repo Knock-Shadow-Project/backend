@@ -13,7 +13,7 @@ axum-prometheus = "0.10"
 bcrypt = "0.17"
 bigdecimal = { version = "0.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
-jsonwebtoken = "9"
+jsonwebtoken = "10"
 # Cliente RESP usado para el rate-limit distribuido. Apunta a Valkey
 # (fork BSD-3 de Redis mantenido por la Linux Foundation tras el cambio
 # de licencia de Redis Inc.) pero hablamos el mismo protocolo RESP, así
