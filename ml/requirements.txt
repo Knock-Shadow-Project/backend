@@ -12,7 +12,7 @@ numpy==2.4.4
 scipy==1.17.1
 streamlit==1.57.0
 plotly==6.7.0
-requests==2.33.1
+requests==2.34.2
 websockets==16.0
 structlog==25.4.0
 pydantic==2.10.4
