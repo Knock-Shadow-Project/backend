@@ -8,7 +8,7 @@
 # app + pipeline
 psycopg2-binary==2.9.12
 pandas==3.0.2
-numpy==2.4.4
+numpy==2.4.6
 scipy==1.17.1
 streamlit==1.57.0
 plotly==6.7.0

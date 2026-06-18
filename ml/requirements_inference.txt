@@ -1,6 +1,6 @@
 # Pinned minimal deps for Pi inference container (Dockerfile.pi-inference).
 # torch is installed separately from the CPU-only index — see the Dockerfile.
-numpy==2.4.4
+numpy==2.4.6
 pandas==3.0.2
 scipy==1.17.1
 structlog==25.4.0
