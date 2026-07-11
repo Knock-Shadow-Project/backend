@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Builder runs on the BUILD host (amd64) and cross-compiles to arm64.
 # No QEMU needed — only the final binary is arm64.
-FROM --platform=$BUILDPLATFORM rust:1.94-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:1.97-bookworm AS builder
 
 # Cross-compilation environment for aarch64
 ENV CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
